@@ -1,21 +1,19 @@
 #include <stdio.h>
 #include <time.h>
 #include <stdlib.h>
-#include "nnet.h"
-#include "../data_loader/data_loader.h"
-#include "../data_loader/mnist_driver.h"
+#include "MLP/nnet.h"
+#include "data_loader/data_loader.h"
+#include "data_loader/mnist_driver.h"
 
-//gcc -O3 -march=native  main.c ../MLP/nnet.c ../mmath_lib/mm_lib.c ../mmath_lib/mm_threaded.c ../MLP/data_loader.c ../MLP/mnist_driver.c -lm -pthread  && ./a.out 80 0.001 15 120 120 10
-//gcc -O3 -march=native main.c nnet.c data_loader.c mnist_drive.c ../mmath_lib/mm_lib.c ../mmath_lib/mm_threaded.c -o mlp
 int main(int argc,char *argv[]){    
     size_t t=time(0);
     srand(t);    
 
-    const char * train_path_labels="../archive_MNIST/train-labels.idx1-ubyte";
-    const char * train_path_images="../archive_MNIST/train-images.idx3-ubyte";
+    const char * train_path_labels="archive_MNIST/train-labels.idx1-ubyte";
+    const char * train_path_images="archive_MNIST/train-images.idx3-ubyte";
 
-    const char * test_path_labels="../archive_MNIST/t10k-labels.idx1-ubyte";
-    const char * test_path_images="../archive_MNIST/t10k-images.idx3-ubyte";
+    const char * test_path_labels ="archive_MNIST/t10k-labels.idx1-ubyte";
+    const char * test_path_images ="archive_MNIST/t10k-images.idx3-ubyte";
 
     data_loader *data_ld=mnist_load(train_path_images,train_path_labels);
 
@@ -51,7 +49,7 @@ int main(int argc,char *argv[]){
         SILU,NULL,
         learn_rt,0, 1,&rstate);
         
-    train_nnet(epochs,mnist_net,data_ld,"net_train.csv");
+    train_nnet(epochs,mnist_net,data_ld,"mlp_train.csv");
     // save_weights(mnist_net);
     destroy_loader(data_ld);
         
@@ -59,11 +57,10 @@ int main(int argc,char *argv[]){
     data_ld=mnist_load(test_path_images,test_path_labels);
     
     // set_batch(mnist_net,100);
-    out_nnet(mnist_net,data_ld,"net_test.csv");
+    out_nnet(mnist_net,data_ld,"mlp_test.csv");
 
     destroy_loader(data_ld);
     destroy_nnet(mnist_net);
-    int result=0;
-    result=system("python3 plot.py");
-    return result;
+    
+    return 0;
 }

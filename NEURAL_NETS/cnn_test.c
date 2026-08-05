@@ -1,5 +1,5 @@
-#include "../MLP/mnist_driver.h"
-#include "cnnet.h"
+#include "data_loader/mnist_driver.h"
+#include "CNN/cnnet.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -48,20 +48,20 @@ int main() {
                         .rstate=&rand};
   cnnet *cnn = create_cnnet(scheme, N_LAYERS, &params);
 
-  const char *train_path_labels = "../archive_MNIST/train-labels.idx1-ubyte";
-  const char *train_path_images = "../archive_MNIST/train-images.idx3-ubyte";
+  const char *train_path_labels = "archive_MNIST/train-labels.idx1-ubyte";
+  const char *train_path_images = "archive_MNIST/train-images.idx3-ubyte";
 
-  const char *test_path_labels = "../archive_MNIST/t10k-labels.idx1-ubyte";
-  const char *test_path_images = "../archive_MNIST/t10k-images.idx3-ubyte";
+  const char *test_path_labels = "archive_MNIST/t10k-labels.idx1-ubyte";
+  const char *test_path_images = "archive_MNIST/t10k-images.idx3-ubyte";
 
   data_loader *data_ld = mnist_load(train_path_images, train_path_labels);
 
-  train_cnnet(epochs, cnn, data_ld, "net_train_cnn.csv");
+  train_cnnet(epochs, cnn, data_ld, "cnn_train.csv");
   destroy_loader(data_ld);
 
   data_ld = mnist_load(test_path_images, test_path_labels);
 
-  out_cnnet(cnn, data_ld, "net_test_cnn.csv");
+  out_cnnet(cnn, data_ld, "cnn_test.csv");
   destroy_loader(data_ld);
   
 
