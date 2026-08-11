@@ -92,20 +92,16 @@ cnnet *create_cnnet(scheme_cnn *scheme, uint32_t n_layers,
     }
     case DENSE_LAYER: {
       uint32_t input_size = in->H * in->W * in->C;
-      scheme[l].dense.layers[0] = input_size;
-
+      scheme_nn *scheme_mlp= scheme[l].dense.scheme_mlp;
+      scheme_mlp[0].input_size=input_size;
+      scheme_mlp[0].input_size=input_size;
+      scheme[l].dense.params_mlp->input_data=in->data;
       cnn->mlp_head = create_nnet(
-          scheme[l].dense.layers, scheme[l].dense.n_layers, params->in_N,
-          input_size, scheme[l].activation, cnn->tp, params->learn_rt,
-          params->w_dec, params->pval, params->rstate);
+        scheme[l].dense.scheme_mlp,cnn->tp,scheme[l].dense.params_mlp);
       cnn->layers[l].l_tag.dense.mlp = cnn->mlp_head;
 
-      cnn->mlp_head->input_grad = malloc(sizeof(matrix));
-      *cnn->mlp_head->input_grad = (matrix){.row = in->N,
-                                            .col = input_size,
-                                            .data = in->grad,
-                                            .end = in->grad_end,
-                                            .len = in->len};
+      cnn->mlp_head->layers[0].grad_in = new_matrix_set_data(
+        in->N,input_size,in->grad);
       cnn->mlp_head->t_step = cnn->t_step;
       break;
     }
@@ -166,15 +162,7 @@ void forward_cnnet(cnnet *cnn, STATE_RUN state_run) {
       break;
     }
     case DENSE_LAYER: {
-      uint32_t features = in->H * in->W * in->C;
-      matrix dense_in = {
-          .row = in->N,
-          .col = features,
-          .data = in->data,
-          .end = in->data_end,
-          .len = in->len,
-      };
-      forward_pass(&dense_in, cnn->layers[l].l_tag.dense.mlp, state_run);
+      forward_pass(cnn->layers[l].l_tag.dense.mlp, state_run);
       break;
     }
     }
@@ -313,7 +301,7 @@ void run_cnnet(size_t epoch_max, cnnet *cnet, data_loader *dtl, STATE_RUN state,
   struct timespec t0, t1, delta;
   float error = 0, acc = 0, ba_md = (float)cnet->batch_size / dtl->size_lb;
   size_t end = dtl->n_itens / cnet->batch_size;
-
+  matrix *out_layer=cnet->mlp_head->layers[cnet->mlp_head->n_layers - 1].out;
   for (size_t e = 0, i; e < epoch_max; e++) {
     error = 0;
     acc = 0;
@@ -327,11 +315,8 @@ void run_cnnet(size_t epoch_max, cnnet *cnet, data_loader *dtl, STATE_RUN state,
         backprop_cnnet(cnet, target);
         update_cnnet(cnet);
       }
-      error += cat_cross_entropy(
-          cnet->mlp_head->outputs[cnet->mlp_head->n_layers - 1], target);
-      acc += get_accuracy(cnet->mlp_head->outputs[cnet->mlp_head->n_layers - 1],
-                          target) *
-             100.0;
+      error += cat_cross_entropy(out_layer , target);
+      acc += get_accuracy(out_layer, target) * 100.0;
     }
 
     clock_gettime(CLOCK_MONOTONIC, &t1);

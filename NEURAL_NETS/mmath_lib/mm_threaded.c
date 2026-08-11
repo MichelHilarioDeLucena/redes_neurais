@@ -8,27 +8,66 @@
 #include <stdio.h>
 #include <unistd.h>
 
-#define F_ACTIVATION(A_FUNC)                                                   \
+#define FWR_ACTIVATION_DROPOUT(A_FUNC)                                         \
   for (; p_out < p_out_end; p_out += out_col) {                                \
     po_row = p_out;                                                            \
     float *pb = bias_data;                                                     \
     while (po_row < p_out + out_col) {                                         \
-      *pz_out = *po_row + *pb++;                                               \
+      *pz_out += *pb++;                                               \
       *po_row = A_FUNC(*pz_out++);                                             \
-      if (task->is_train) {                                                    \
-        float p_rand = rand_r(&rseed) / ((float)RAND_MAX);                     \
-        if (p_rand < p_alive)                                                  \
-          *p_mask++ = 1.0f, *po_row *= scale;                                  \
-        else                                                                   \
-          *p_mask++ = 0.0f, *po_row = 0.0f;                                    \
-      }                                                                        \
+      float p_rand = rand_r(&rseed) / ((float)RAND_MAX);                       \
+      if (p_rand < p_alive)                                                    \
+        *p_mask++ = 1.0f, *po_row *= scale;                                    \
+      else                                                                     \
+        *p_mask++ = 0.0f, *po_row = 0.0f;                                      \
+      po_row++;                                                                \
+    }                                                                          \
+  }
+#define FWR_ACTIVATION_DROPOUT_LINEAR                                          \
+  for (; p_out < p_out_end; p_out += out_col) {                                \
+    po_row = p_out;                                                            \
+    float *pb = bias_data;                                                     \
+    while (po_row < p_out + out_col) {                                         \
+      *pz_out +=*pb++;                                               \
+      *po_row = *pz_out++;                                                     \
+      float p_rand = rand_r(&rseed) / ((float)RAND_MAX);                       \
+      if (p_rand < p_alive)                                                    \
+        *p_mask++ = 1.0f, *po_row *= scale;                                    \
+      else                                                                     \
+        *p_mask++ = 0.0f, *po_row = 0.0f;                                      \
       po_row++;                                                                \
     }                                                                          \
   }
 
-#define B_D_ACTIVATION(D_A_FUNC)                                               \
+#define FWR_ACTIVATION(A_FUNC)                                                 \
+  for (; p_out < p_out_end; p_out += out_col) {                                \
+    po_row = p_out;                                                            \
+    float *pb = bias_data, *end = p_out + out_col;                             \
+    while (po_row < end) {                                                     \
+      *pz_out += *pb++;                                                        \
+      *po_row = A_FUNC(*pz_out++);                                             \
+      po_row++;                                                                \
+    }                                                                          \
+  }
+
+#define FWR_ACTIVATION_LINEAR                                                  \
+  for (; p_out < p_out_end; p_out += out_col) {                                \
+    po_row = p_out;                                                            \
+    float *pb = bias_data;                                                     \
+    while (po_row < p_out + out_col) {                                         \
+      *pz_out +=*pb++;                                               \
+      *po_row = *pz_out++;                                                     \
+      po_row++;                                                                \
+    }                                                                          \
+  }
+
+#define BCK_D_ACTIVATION_DROPOUT(D_A_FUNC)                                     \
+  for (; p_delta < p_delta_end; p_delta++,p_mask++)                                     \
+    *p_delta = (*p_mask==0.f) ? 0 : *p_delta * D_A_FUNC(*p_out++) * scale;
+
+#define BCK_D_ACTIVATION(D_A_FUNC)                                             \
   for (; p_delta < p_delta_end; p_delta++)                                     \
-    *p_delta = *p_delta * D_A_FUNC(*p_out++) * *p_mask++ * scale;
+    *p_delta = *p_delta * D_A_FUNC(*p_out++) * scale;
 
 thread_pool *new_thread_pool() {
   thread_pool *tp = malloc(sizeof(thread_pool));
@@ -68,7 +107,6 @@ void *kernel_operation(void *arg) {
 
     switch (task->w_state) {
     case MATMULT: {
-      // }
       KERNEL_MATRIX_MULT(
         task->state.matmult.a,
         task->state.matmult.b,
@@ -94,14 +132,31 @@ void *kernel_operation(void *arg) {
       float scale = 1.f / p_alive;
       unsigned int rseed = task->state.f_fusion.rseed;
       size_t out_col = out->col;
-      int is_train = task->is_train;
+      
       AFUNC_TYPE a_func_type = task->state.f_fusion.f_type;
-      switch (a_func_type) {
-      case SIGMOID: { F_ACTIVATION(sigmoid)     } break;
-      case TANH:    { F_ACTIVATION(tanhf)       } break;
-      case RELU:    { F_ACTIVATION(ReLU)        } break;
-      case L_RELU:  { F_ACTIVATION(leaky_ReLU)  } break;
-      case SILU:    { F_ACTIVATION(silu)        } break;
+      if(task->state.f_fusion.is_dropout)
+        switch (a_func_type) {
+        case SIGMOID: { FWR_ACTIVATION_DROPOUT(sigmoid)     } break;
+        case TANH:    { FWR_ACTIVATION_DROPOUT(tanhf)       } break;
+        case RELU:    { FWR_ACTIVATION_DROPOUT(ReLU)        } break;
+        case L_RELU:  { FWR_ACTIVATION_DROPOUT(leaky_ReLU)  } break;
+        case SILU:    { FWR_ACTIVATION_DROPOUT(silu)        } break;
+        case LOG_SOFTMAX:{
+          FWR_ACTIVATION_LINEAR
+        } break;
+        }
+      else{
+        switch (a_func_type) {
+        case SIGMOID: { FWR_ACTIVATION(sigmoid)     } break;
+        case TANH:    { FWR_ACTIVATION(tanhf)       } break;
+        case RELU:    { FWR_ACTIVATION(ReLU)        } break;
+        case L_RELU:  { FWR_ACTIVATION(leaky_ReLU)  } break;
+        case SILU:    { FWR_ACTIVATION(silu)        } break;
+        case LOG_SOFTMAX:{
+          FWR_ACTIVATION_LINEAR
+          
+        } break;
+        }
       }
     } break;
     case B_LAYER_FUSION: {
@@ -115,18 +170,23 @@ void *kernel_operation(void *arg) {
       float *p_delta_end = delta->data + task->end_row * delta->col;
       float scale = 1.f / task->state.b_fusion.p_alive;
       AFUNC_TYPE da_func_type = task->state.b_fusion.df_type;
-
-      switch (da_func_type) {
-      case SIGMOID:
-        {B_D_ACTIVATION(d_sigmoid)} break;
-      case TANH:
-        {B_D_ACTIVATION(d_tanh)} break;
-      case RELU:
-        {B_D_ACTIVATION(d_ReLU)} break;
-      case L_RELU:
-        {B_D_ACTIVATION(d_leaky_ReLU)} break;
-      case SILU:
-        {B_D_ACTIVATION(d_silu)} break;
+      if(task->state.b_fusion.is_dropout){ 
+        switch (da_func_type) {
+          case SIGMOID: {BCK_D_ACTIVATION_DROPOUT(d_sigmoid)    } break;
+          case TANH:    {BCK_D_ACTIVATION_DROPOUT(d_tanh)       } break;
+          case RELU:    {BCK_D_ACTIVATION_DROPOUT(d_ReLU)       } break;
+          case L_RELU:  {BCK_D_ACTIVATION_DROPOUT(d_leaky_ReLU) } break;
+          case SILU:    {BCK_D_ACTIVATION_DROPOUT(d_silu)       } break;
+        }
+      }else{
+        switch (da_func_type) {
+          case SIGMOID: {BCK_D_ACTIVATION(d_sigmoid)    } break;
+          case TANH:    {BCK_D_ACTIVATION(d_tanh)       } break;
+          case RELU:    {BCK_D_ACTIVATION(d_ReLU)       } break;
+          case L_RELU:  {BCK_D_ACTIVATION(d_leaky_ReLU) } break;
+          case SILU:    {BCK_D_ACTIVATION(d_silu)       } break;
+          
+        }
       }
 
     } break;
@@ -178,9 +238,8 @@ void threaded_matmult(matrix *a, matrix *b, matrix *c,TYPE_MATMULT type,bool res
 }
 
 void threaded_forward(matrix *bias, matrix *mask, matrix *out, matrix *z_out,
-                      float p_val, int is_train, AFUNC_TYPE f_type,
+                      float p_val, int is_active, AFUNC_TYPE f_type,
                       thread_pool *tp) {
-  // assert(bias->row==mask->row && bias->row==out->row);
 
   uint32_t rows_slices = out->row / tp->workers_count;
   uint32_t rows_mod = out->row % tp->workers_count;
@@ -199,7 +258,7 @@ void threaded_forward(matrix *bias, matrix *mask, matrix *out, matrix *z_out,
     tp->tasks[i].start_row = rows_slices * i;
     tp->tasks[i].end_row = rows_slices * (i + 1);
     tp->tasks[i].w_state = F_LAYER_FUSION;
-    tp->tasks[i].is_train = is_train;
+    tp->tasks[i].state.f_fusion.is_dropout = is_active;
   }
   size_t last_i = tp->workers_count - 1;
   tp->tasks[last_i].state.f_fusion.a = bias;
@@ -213,7 +272,7 @@ void threaded_forward(matrix *bias, matrix *mask, matrix *out, matrix *z_out,
   tp->tasks[last_i].start_row = rows_slices * (tp->workers_count - 1);
   tp->tasks[last_i].end_row = rows_slices * tp->workers_count + rows_mod;
   tp->tasks[last_i].w_state = F_LAYER_FUSION;
-  tp->tasks[last_i].is_train = is_train;
+  tp->tasks[last_i].state.f_fusion.is_dropout = is_active;
 
   tp->job_id++;
   tp->active_workers = tp->workers_count;
@@ -222,9 +281,12 @@ void threaded_forward(matrix *bias, matrix *mask, matrix *out, matrix *z_out,
   while (tp->active_workers > 0)
     pthread_cond_wait(&tp->cond_master, &tp->lock);
   pthread_mutex_unlock(&tp->lock);
+
+  if(f_type==LOG_SOFTMAX)
+    log_softmax(out);
 }
 
-void threaded_backward(matrix *out, matrix *mask, matrix *delta, float p_val,
+void threaded_backward(matrix *out, matrix *mask, matrix *delta, float p_val,int is_dropout,
                       AFUNC_TYPE d_func, thread_pool *tp) {
   uint32_t rows_slices = out->row / tp->workers_count;
   uint32_t rows_mod = out->row % tp->workers_count;
@@ -232,6 +294,7 @@ void threaded_backward(matrix *out, matrix *mask, matrix *delta, float p_val,
   pthread_mutex_lock(&tp->lock);
 
   for (uint32_t i = 0; i < tp->workers_count - 1; i++) {
+    tp->tasks[i].state.b_fusion.is_dropout = is_dropout;
     tp->tasks[i].state.b_fusion.a = out;
     tp->tasks[i].state.b_fusion.b = mask;
     tp->tasks[i].state.b_fusion.c = delta;
@@ -243,6 +306,7 @@ void threaded_backward(matrix *out, matrix *mask, matrix *delta, float p_val,
     tp->tasks[i].w_state = B_LAYER_FUSION;
   }
   size_t last_i = tp->workers_count - 1;
+  tp->tasks[last_i].state.b_fusion.is_dropout = is_dropout;
   tp->tasks[last_i].state.b_fusion.a = out;
   tp->tasks[last_i].state.b_fusion.b = mask;
   tp->tasks[last_i].state.b_fusion.c = delta;

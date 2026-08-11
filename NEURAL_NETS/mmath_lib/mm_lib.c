@@ -17,6 +17,17 @@ matrix *new_matrix(uint32_t row, uint32_t col) {
   return new_m;
 }
 
+matrix *new_matrix_set_data(uint32_t r, uint32_t c, float *data){
+    matrix *new_m = malloc(sizeof(matrix));
+  if(!new_m){
+    perror("ERRO:falha em alocar mem.");
+    exit(1);
+  }
+  *new_m = (matrix){r, c, r * c, data};
+  new_m->end = new_m->data + new_m->len;
+  return new_m;
+}
+
 tensor *new_tensor( uint32_t N, uint32_t H, uint32_t W, uint32_t C) {
   
   tensor *_tensor = calloc(1,sizeof(tensor));

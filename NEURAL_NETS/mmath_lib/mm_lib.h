@@ -70,7 +70,9 @@
 
 enum { NS_PER_SECOND = 1000000000 };
 
-typedef enum AFUNC_TYPE { L_RELU, RELU, SIGMOID, TANH, SILU } AFUNC_TYPE;
+typedef enum AFUNC_TYPE { 
+  L_RELU, RELU, SIGMOID, TANH, SILU,LOG_SOFTMAX, LINEAR
+} AFUNC_TYPE;
 
 typedef enum TYPE_MATMULT {
   NN,
@@ -96,6 +98,7 @@ typedef struct {
 } XorShift64State;
 
 matrix *new_matrix(uint32_t r, uint32_t c);
+matrix *new_matrix_set_data(uint32_t r, uint32_t c,float *data);
 
 tensor *new_tensor( uint32_t N, uint32_t H, uint32_t W, uint32_t C);
 tensor *new_tensor_grad_init( uint32_t N, uint32_t H, uint32_t W, uint32_t C);

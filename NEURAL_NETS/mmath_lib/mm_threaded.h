@@ -20,11 +20,12 @@ typedef struct param {
       unsigned int rseed;
       AFUNC_TYPE f_type;
       float p_alive;
-      int is_train;
+      int is_dropout;
     } f_fusion;
     struct {
-      matrix *a, *b, *c;
+      matrix *a, *b, *c,*target;
       float p_alive;
+      int is_dropout;
       AFUNC_TYPE df_type;
     } b_fusion;
   } state;
@@ -32,8 +33,6 @@ typedef struct param {
   struct thread_pool *pool;
   uint32_t id, start_row, end_row;
   WORK_STATE w_state;
-
-  int is_train;
 } param;
 
 typedef struct thread_pool {
@@ -54,7 +53,7 @@ void threaded_matmult(matrix *a, matrix *b, matrix *c,TYPE_MATMULT type,bool res
 void threaded_forward(matrix *bias, matrix *mask, matrix *out, matrix *z_out,
                       float p_val, int is_train, AFUNC_TYPE actv_type,
                       thread_pool *tp);
-void threaded_backward(matrix *out, matrix *mask, matrix *delta, float p_val,
+void threaded_backward(matrix *out, matrix *mask, matrix *delta, float p_val,int is_train,
                       AFUNC_TYPE actv_type, thread_pool *tp);
 void destroy_thread_pool(thread_pool *tp);
 

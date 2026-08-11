@@ -25,9 +25,8 @@ typedef struct scheme_cnn {
       uint32_t filters, padding;
     } conv;
     struct {
-      uint32_t *layers;
-      uint32_t n_layers;
-      
+      params_nnet *params_mlp;
+      scheme_nn *scheme_mlp;
     } dense;
   };
 } scheme_cnn;
