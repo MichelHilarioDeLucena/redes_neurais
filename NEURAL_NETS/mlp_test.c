@@ -25,12 +25,14 @@ int main(int argc, char *argv[]) {
 		{	.input_size = data_ld->stride_in,
 			.type=DENSE_LINEAR,
 			.tag.linear={.hidden_size=120} },
-		{	.type=BATCH_NORM },
-		{	.type=ACTIVATION,.tag.activ_l={.activ=RELU} },
+		{	.type=BATCH_NORM_MLP },
+		{	.type=ACTIV_MLP,.tag.activ_l={.activ=RELU} },
+
 		{	.type=DENSE_LINEAR,
 			.tag.linear={.hidden_size=120} },
-		{	.type=BATCH_NORM },
-		{	.type=ACTIVATION,.tag.activ_l={.activ=RELU} },
+		{	.type=BATCH_NORM_MLP },
+		{	.type=ACTIV_MLP,.tag.activ_l={.activ=RELU} },
+    
     { .type=DENSE,
       .tag.dense={.activ= LOG_SOFTMAX,.hidden_size=10}}
 	};

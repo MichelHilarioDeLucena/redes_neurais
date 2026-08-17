@@ -55,19 +55,19 @@
     po_row = p_out;                                                            \
     float *pb = bias_data;                                                     \
     while (po_row < p_out + out_col) {                                         \
-      *pz_out +=*pb++;                                               \
+      *pz_out += *pb++;                                                        \
       *po_row = *pz_out++;                                                     \
       po_row++;                                                                \
     }                                                                          \
   }
 
 #define BCK_D_ACTIVATION_DROPOUT(D_A_FUNC)                                     \
-  for (; p_delta < p_delta_end; p_delta++,p_mask++)                                     \
-    *p_delta = (*p_mask==0.f) ? 0 : *p_delta * D_A_FUNC(*p_out++) * scale;
+  for (; p_gin < end; p_gin++, p_mask++)                                       \
+    *p_gin = (*p_mask == 0.f) ? 0 : *p_gout++ * D_A_FUNC(*p_z++) * scale;
 
 #define BCK_D_ACTIVATION(D_A_FUNC)                                             \
-  for (; p_delta < p_delta_end; p_delta++)                                     \
-    *p_delta = *p_delta * D_A_FUNC(*p_out++) * scale;
+  for (; p_gin < end; p_gin++)                                                 \
+    *p_gin = *p_gout++ * D_A_FUNC(*p_z++) * scale;
 
 thread_pool *new_thread_pool() {
   thread_pool *tp = malloc(sizeof(thread_pool));
@@ -133,7 +133,7 @@ void *kernel_operation(void *arg) {
       unsigned int rseed = task->state.f_fusion.rseed;
       size_t out_col = out->col;
       
-      AFUNC_TYPE a_func_type = task->state.f_fusion.f_type;
+      activ_func a_func_type = task->state.f_fusion.f_type;
       if(task->state.f_fusion.is_dropout)
         switch (a_func_type) {
         case SIGMOID: { FWR_ACTIVATION_DROPOUT(sigmoid)     } break;
@@ -141,6 +141,7 @@ void *kernel_operation(void *arg) {
         case RELU:    { FWR_ACTIVATION_DROPOUT(ReLU)        } break;
         case L_RELU:  { FWR_ACTIVATION_DROPOUT(leaky_ReLU)  } break;
         case SILU:    { FWR_ACTIVATION_DROPOUT(silu)        } break;
+        case LINEAR:
         case LOG_SOFTMAX:{
           FWR_ACTIVATION_LINEAR
         } break;
@@ -152,24 +153,26 @@ void *kernel_operation(void *arg) {
         case RELU:    { FWR_ACTIVATION(ReLU)        } break;
         case L_RELU:  { FWR_ACTIVATION(leaky_ReLU)  } break;
         case SILU:    { FWR_ACTIVATION(silu)        } break;
+        case LINEAR:
         case LOG_SOFTMAX:{
           FWR_ACTIVATION_LINEAR
-          
         } break;
         }
       }
     } break;
     case B_LAYER_FUSION: {
-      matrix *out = task->state.b_fusion.a;
-      matrix *mask = task->state.b_fusion.b;
-      matrix *delta = task->state.b_fusion.c;
-      float *p_out = out->data + task->start_row * out->col;
+      matrix *z    = task->state.b_fusion.a;
+      matrix *gin  = task->state.b_fusion.b;
+      matrix *gout = task->state.b_fusion.c;
+      matrix *mask = task->state.b_fusion.d;
+      float *p_z    = z->data + task->start_row * z->col;
+      float *p_gin  = gin->data + task->start_row * gin->col;
+      float *p_gout = gout->data + task->start_row * gout->col;
       float *p_mask = mask->data + task->start_row * mask->col;
-      float *p_delta = delta->data + task->start_row * delta->col;
 
-      float *p_delta_end = delta->data + task->end_row * delta->col;
+      float *end = gin->data + task->end_row * gin->col;
       float scale = 1.f / task->state.b_fusion.p_alive;
-      AFUNC_TYPE da_func_type = task->state.b_fusion.df_type;
+      activ_func da_func_type = task->state.b_fusion.df_type;
       if(task->state.b_fusion.is_dropout){ 
         switch (da_func_type) {
           case SIGMOID: {BCK_D_ACTIVATION_DROPOUT(d_sigmoid)    } break;
@@ -200,7 +203,7 @@ void *kernel_operation(void *arg) {
   return NULL;
 }
 
-void threaded_matmult(matrix *a, matrix *b, matrix *c,TYPE_MATMULT type,bool reset, thread_pool *tp) {
+void threaded_matmult(matrix *a, matrix *b, matrix *c,type_matmult type,bool reset, thread_pool *tp) {
   
   uint32_t rows_slices =c->row / tp->workers_count;
   uint32_t rows_mod    =c->row  % tp->workers_count;
@@ -238,7 +241,7 @@ void threaded_matmult(matrix *a, matrix *b, matrix *c,TYPE_MATMULT type,bool res
 }
 
 void threaded_forward(matrix *bias, matrix *mask, matrix *out, matrix *z_out,
-                      float p_val, int is_active, AFUNC_TYPE f_type,
+                      float p_val, int is_active, activ_func f_type,
                       thread_pool *tp) {
 
   uint32_t rows_slices = out->row / tp->workers_count;
@@ -286,18 +289,19 @@ void threaded_forward(matrix *bias, matrix *mask, matrix *out, matrix *z_out,
     log_softmax(out);
 }
 
-void threaded_backward(matrix *out, matrix *mask, matrix *delta, float p_val,int is_dropout,
-                      AFUNC_TYPE d_func, thread_pool *tp) {
-  uint32_t rows_slices = out->row / tp->workers_count;
-  uint32_t rows_mod = out->row % tp->workers_count;
+void threaded_backward(matrix *z, matrix *gin, matrix *gout,matrix *mask, float p_val,int is_dropout,
+                      activ_func d_func, thread_pool *tp){
+  uint32_t rows_slices = z->row / tp->workers_count;
+  uint32_t rows_mod = z->row % tp->workers_count;
 
   pthread_mutex_lock(&tp->lock);
 
   for (uint32_t i = 0; i < tp->workers_count - 1; i++) {
     tp->tasks[i].state.b_fusion.is_dropout = is_dropout;
-    tp->tasks[i].state.b_fusion.a = out;
-    tp->tasks[i].state.b_fusion.b = mask;
-    tp->tasks[i].state.b_fusion.c = delta;
+    tp->tasks[i].state.b_fusion.a = z;
+    tp->tasks[i].state.b_fusion.b = gin;
+    tp->tasks[i].state.b_fusion.c = gout;
+    tp->tasks[i].state.b_fusion.d = mask;
     tp->tasks[i].state.b_fusion.p_alive = p_val;
     tp->tasks[i].state.b_fusion.df_type = d_func;
 
@@ -307,9 +311,10 @@ void threaded_backward(matrix *out, matrix *mask, matrix *delta, float p_val,int
   }
   size_t last_i = tp->workers_count - 1;
   tp->tasks[last_i].state.b_fusion.is_dropout = is_dropout;
-  tp->tasks[last_i].state.b_fusion.a = out;
-  tp->tasks[last_i].state.b_fusion.b = mask;
-  tp->tasks[last_i].state.b_fusion.c = delta;
+  tp->tasks[last_i].state.b_fusion.a = z;
+  tp->tasks[last_i].state.b_fusion.b = gin;
+  tp->tasks[last_i].state.b_fusion.c = gout;
+  tp->tasks[last_i].state.b_fusion.d = mask;
   tp->tasks[last_i].state.b_fusion.p_alive = p_val;
   tp->tasks[last_i].state.b_fusion.df_type = d_func;
 

@@ -70,16 +70,16 @@
 
 enum { NS_PER_SECOND = 1000000000 };
 
-typedef enum AFUNC_TYPE { 
+typedef enum activ_func { 
   L_RELU, RELU, SIGMOID, TANH, SILU,LOG_SOFTMAX, LINEAR
-} AFUNC_TYPE;
+} activ_func;
 
-typedef enum TYPE_MATMULT {
+typedef enum type_matmult {
   NN,
   TN,
   NT,
   TT,
-} TYPE_MATMULT;
+} type_matmult;
 
 typedef struct tensor {
   float *data, *data_end;
@@ -104,7 +104,7 @@ tensor *new_tensor( uint32_t N, uint32_t H, uint32_t W, uint32_t C);
 tensor *new_tensor_grad_init( uint32_t N, uint32_t H, uint32_t W, uint32_t C);
 
 void matrix_mult(matrix *restrict a, matrix *restrict b, matrix *restrict c,
-                 TYPE_MATMULT type, bool reset);
+                 type_matmult type, bool reset);
 
 void transpose_by(matrix *a, matrix *t);
 void matrix_sum(matrix *a, matrix *b, matrix *c);

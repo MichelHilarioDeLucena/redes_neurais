@@ -49,7 +49,7 @@ tensor *new_tensor_grad_init( uint32_t N, uint32_t H, uint32_t W, uint32_t C) {
 }
 
 void matrix_mult(matrix *restrict a, matrix *restrict b, matrix *restrict c,
-                 TYPE_MATMULT type, bool reset) {
+                 type_matmult type, bool reset) {
   if (reset)
     memset(c->data, 0, c->len * sizeof(float));
   KERNEL_MATRIX_MULT(a, b, c, 0, c->row, type);
