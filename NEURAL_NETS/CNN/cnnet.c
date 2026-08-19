@@ -4,107 +4,100 @@
 
 cnnet *create_cnnet(scheme_cnn *scheme, uint32_t n_layers,
                     cnnet_params *params) {
-  cnnet *cnn = malloc(sizeof(cnnet));
+  cnnet *cnn = calloc(1,sizeof(cnnet));
+  cnn->layers = calloc(n_layers,sizeof(cnnet_layer));
   cnn->batch_size = params->in_N;
   cnn->n_layers = n_layers;
-  cnn->layers = malloc(sizeof(cnnet_layer) * n_layers);
   cnn->learn_rt = params->learn_rt;
   cnn->n_labels = params->n_labels;
+  cnn->rstate = params->rstate;
   cnn->t_step = 1;
   cnn->b1 = .9f;
   cnn->b2 = .999f;
   cnn->tp = new_thread_pool();
 
-  cnn->layers[0].input = new_tensor_grad_init(params->in_N, params->in_H,
+  cnn->layers[0].in = new_tensor_grad_init(params->in_N, params->in_H,
                                               params->in_W, params->in_C);
 
   for (uint32_t l = 0; l < n_layers; l++) {
-    cnn->layers[l].l_type = scheme[l].type;
-    cnn->layers[l].activation = scheme[l].activation;
-    cnn->layers[l].stride = scheme[l].stride;
-    cnn->layers[l].kh = scheme[l].kh;
-    cnn->layers[l].kw = scheme[l].kw;
+    cnnet_layer *cnn_l=cnn->layers+l;
+    cnn_l->l_type = scheme[l].type;
+    
+    cnn_l->stride = scheme[l].stride;
+    cnn_l->kh = scheme[l].kh;
+    cnn_l->kw = scheme[l].kw;
 
     if (l > 0)
-      cnn->layers[l].input = cnn->layers[l - 1].output;
+      cnn_l->in = cnn->layers[l - 1].out;
 
-    tensor *in = cnn->layers[l].input;
+    tensor *in = cnn_l->in;
 
-    switch (cnn->layers[l].l_type) {
+    switch (cnn_l->l_type) {
     case CONV_LAYER: {
+      conv_linear_l *conv=&cnn_l->tag.conv;
       uint32_t kh = scheme[l].kh;
       uint32_t kw = scheme[l].kw;
       uint32_t ho =
           (in->H - kh + 2 * scheme[l].conv.padding) / scheme[l].stride + 1;
       uint32_t wo =
           (in->W - kw + 2 * scheme[l].conv.padding) / scheme[l].stride + 1;
-      uint32_t filters = scheme[l].conv.filters;
       uint32_t M = in->C * kw * kh;
       uint32_t N = ho * wo * params->in_N;
-
-      cnn->layers[l].z_out = new_tensor_grad_init(params->in_N, ho, wo, filters);
-      cnn->layers[l].output = new_tensor_grad_init(params->in_N, ho, wo, filters);
-      cnn->layers[l].l_tag.conv.filters = filters;
-      cnn->layers[l].l_tag.conv.padding = scheme[l].conv.padding;
-
-      cnn->layers[l].l_tag.conv.in_mat = new_matrix(M, N);
-      cnn->layers[l].l_tag.conv.W_mat = new_matrix(filters, M);
-      cnn->layers[l].l_tag.conv.mW_mat = new_matrix(filters, M);
-      cnn->layers[l].l_tag.conv.vW_mat = new_matrix(filters, M);
-
-      cnn->layers[l].l_tag.conv.bias = new_matrix(filters, 1);
-
-      cnn->layers[l].l_tag.conv.mb_mat = new_matrix(filters, 1);
-      cnn->layers[l].l_tag.conv.vb_mat = new_matrix(filters, 1);
-      cnn->layers[l].l_tag.conv.dW_mat = new_matrix(filters, M);
-      cnn->layers[l].l_tag.conv.d_bias = new_matrix(filters, 1);
-      cnn->layers[l].l_tag.conv.dZ_mat = new_matrix(filters, N);
-      cnn->layers[l].l_tag.conv.out_mat = new_matrix(filters, N);
-
-      cnn->layers[l].l_tag.conv.t_W_mat = new_matrix(M, filters);
-      cnn->layers[l].l_tag.conv.t_in_mat = new_matrix(N, M);
-      if (params->rstate) {
-        if (cnn->layers[l].activation == RELU ||
-            cnn->layers[l].activation == L_RELU)
-          init_uniform_distr_He_xors64(cnn->layers[l].l_tag.conv.W_mat, M,
-                                       params->rstate);
-        else
-          init_uniform_distr_xors64(cnn->layers[l].l_tag.conv.W_mat, M, filters,
-                                    params->rstate);
+      uint32_t filters = scheme[l].conv.filters;
+      conv->filters = filters;
+      cnn_l->out = new_tensor_grad_init(params->in_N, ho, wo, filters);
+      conv->padding = scheme[l].conv.padding;
+      conv->in_mat = new_matrix(M, N);
+      conv->W_mat = new_matrix(filters, M);
+      conv->mW_mat = new_matrix(filters, M);
+      conv->vW_mat = new_matrix(filters, M);
+      conv->bias = new_matrix(filters, 1);
+      conv->mb_mat = new_matrix(filters, 1);
+      conv->vb_mat = new_matrix(filters, 1);
+      conv->dW_mat = new_matrix(filters, M);
+      conv->d_bias = new_matrix(filters, 1);
+      conv->out_mat = new_matrix(filters, N);
+      conv->dZ_mat = new_matrix(filters, N);
+      conv->t_W_mat = new_matrix(M, filters);
+      conv->t_in_mat = new_matrix(N, M);
+      activ_func afunc=(cnn_l+1)->l_type==ACTIV_CNN?(cnn_l+1)->tag.activ.activation : LINEAR;
+      uint32_t use_he=afunc == RELU || afunc == L_RELU || afunc == LINEAR;
+      if (cnn->rstate) {
+        if (use_he) init_uniform_distr_He_xors64(conv->W_mat, M,cnn->rstate);
+        else init_uniform_distr_xors64(conv->W_mat, M, filters,cnn->rstate);
       } else {
-        if (cnn->layers[l].activation == RELU ||
-            cnn->layers[l].activation == L_RELU)
-          init_uniform_distr_He(cnn->layers[l].l_tag.conv.W_mat, M);
-        else
-          init_uniform_distr(cnn->layers[l].l_tag.conv.W_mat, M, filters);
+        if (use_he) init_uniform_distr_He(conv->W_mat, M);
+        else init_uniform_distr(conv->W_mat, M, filters);
       }
-      break;
-    }
+    }break;
+    case ACTIV_CNN: {
+      activ_l_cnn *activ=&cnn_l->tag.activ;
+      activ->activation = scheme[l].activ.activation;
+      cnn_l->out = new_tensor_grad_init(in->N,in->H, in->W, in->C);
+    }break;
     case POOLING_LAYER: {
+      poolling_l *pool=&cnn_l->tag.pool;
       uint32_t kh = scheme[l].kh, kw = scheme[l].kw;
       uint32_t ho = (in->H - kh) / scheme[l].stride + 1;
       uint32_t wo = (in->W - kw) / scheme[l].stride + 1;
-      cnn->layers[l].z_out = NULL;
-      cnn->layers[l].output = new_tensor_grad_init(params->in_N, ho, wo, in->C);
-      cnn->layers[l].l_tag.pool.mask =
-          calloc(cnn->layers[l].output->len, sizeof(uint32_t));
-      break;
-    }
-    case DENSE_LAYER: {
+      
+      cnn_l->out = new_tensor_grad_init(params->in_N, ho, wo, in->C);
+      pool->mask =calloc(cnn_l->out->len, sizeof(uint32_t));
+    }break;
+    case MLP_LAYER: {
       uint32_t input_size = in->H * in->W * in->C;
-      scheme_nn *scheme_mlp= scheme[l].dense.scheme_mlp;
-      scheme_mlp[0].input_size=input_size;
-      scheme_mlp[0].input_size=input_size;
-      scheme[l].dense.params_mlp->input_data=in->data;
-      cnn->mlp_head = create_nnet(
-        scheme[l].dense.scheme_mlp,cnn->tp,scheme[l].dense.params_mlp);
-      cnn->layers[l].l_tag.dense.mlp = cnn->mlp_head;
-
-      cnn->mlp_head->layers[0].grad_in = new_matrix_set_data(
-        in->N,input_size,in->grad);
-      cnn->mlp_head->t_step = cnn->t_step;
-      break;
+      scheme_nn *scheme_mlp= scheme[l].mlp.scheme_mlp;
+      
+      scheme_mlp->input_size=input_size;
+      scheme[l].mlp.params_mlp->input_size = input_size;
+      scheme[l].mlp.params_mlp->input_data=in->data;
+      cnn_l->tag.mlp = create_nnet(scheme[l].mlp.scheme_mlp,cnn->tp,scheme[l].mlp.params_mlp);
+      cnn->mlp_head=cnn_l->tag.mlp;
+      cnn_l->tag.mlp->layers[0].grad_in = new_matrix_set_data( in->N,input_size,in->grad);
+      cnn_l->tag.mlp->t_step = cnn->t_step;
+      
     }
+    
     }
   }
   return cnn;
@@ -112,59 +105,41 @@ cnnet *create_cnnet(scheme_cnn *scheme, uint32_t n_layers,
 
 void forward_cnnet(cnnet *cnn, STATE_RUN state_run) {
   for (uint32_t l = 0; l < cnn->n_layers; l++) {
-
-    tensor *in = cnn->layers[l].input;
-    tensor *z_out = cnn->layers[l].z_out;
-    tensor *output = cnn->layers[l].output;
-    uint32_t kh = cnn->layers[l].kh;
-    uint32_t kw = cnn->layers[l].kw;
-    uint32_t stride = cnn->layers[l].stride;
-    switch (cnn->layers[l].l_type) {
+    cnnet_layer *cnn_l=cnn->layers+l;
+    tensor *in = cnn_l->in;
+    tensor *out = cnn_l->out;
+    uint32_t kh = cnn_l->kh;
+    uint32_t kw = cnn_l->kw;
+    uint32_t stride = cnn_l->stride;
+    switch (cnn_l->l_type) {
     case CONV_LAYER: {
-      matrix *in_mat = cnn->layers[l].l_tag.conv.in_mat;
-      matrix *W_mat = cnn->layers[l].l_tag.conv.W_mat;
-      matrix *out_mat = cnn->layers[l].l_tag.conv.out_mat;
-      uint32_t padd = cnn->layers[l].l_tag.conv.padding;
-
+      conv_linear_l *conv=&cnn_l->tag.conv;
+      matrix *in_mat  = conv->in_mat;
+      matrix *W_mat   = conv->W_mat;
+      matrix *out_mat = conv->out_mat;
+      uint32_t padd   = conv->padding;
       im2col(in, in_mat, kw, kh, stride, padd);
-
       threaded_matmult(W_mat, in_mat, out_mat, NN, true, cnn->tp);
-      for (int f = 0; f < out_mat->row; f++) {
-        float b_val = cnn->layers[l].l_tag.conv.bias->data[f];
-        for (int i = 0; i < out_mat->col; i++)
-          out_mat->data[f * out_mat->col + i] += b_val;
+      matrix_sum_by_row(out_mat,conv->bias);
+      matrix_to_tensor_NHWC(out_mat,out,1);
+    }break;
+    case ACTIV_CNN: {
+      activ_func act = cnn_l->tag.activ.activation;
+      for (int i = 0; i < out->len; i++) {
+        float z = in->data[i];
+        out->data[i] =  (act == RELU)    ? ReLU(z)
+                      : (act == L_RELU)  ? leaky_ReLU(z)
+                      : (act == SIGMOID) ? sigmoid(z)
+                      : (act == TANH)    ? tanhf(z)
+                                         : z;
       }
-      for (int b = 0; b < in->N; b++)
-        for (int h = 0; h < z_out->H; h++)
-          for (int w = 0; w < z_out->W; w++) {
-            int patch = b * (z_out->H * z_out->W) + h * z_out->W + w;
-            for (int k = 0; k < z_out->C; k++) {
-              float val = out_mat->data[k * out_mat->col + patch];
-              int out_idx = ((b * z_out->H + h) * z_out->W + w) * z_out->C + k;
-              z_out->data[out_idx] = val;
-            }
-          }
-
-      AFUNC_TYPE act = cnn->layers[l].activation;
-      for (int i = 0; i < z_out->len; i++) {
-        float z = z_out->data[i];
-        output->data[i] = (act == RELU)      ? ReLU(z)
-                          : (act == L_RELU)  ? leaky_ReLU(z)
-                          : (act == SIGMOID) ? sigmoid(z)
-                          : (act == TANH)    ? tanhf(z)
-                                             : z;
-      }
-      break;
-    }
+    }break;
     case POOLING_LAYER: {
-      uint32_t *mask = cnn->layers[l].l_tag.pool.mask;
-      max_pooling(in, output, mask, kh, kw, stride, 0);
-      break;
-    }
-    case DENSE_LAYER: {
-      forward_pass(cnn->layers[l].l_tag.dense.mlp, state_run);
-      break;
-    }
+      uint32_t *mask = cnn_l->tag.pool.mask;
+      max_pooling(in, out, mask, kh, kw, stride, 0);
+    }break;
+    case MLP_LAYER: forward_pass(cnn_l->tag.mlp, state_run);
+    break;
     }
   }
 }
@@ -172,81 +147,63 @@ void forward_cnnet(cnnet *cnn, STATE_RUN state_run) {
 void backprop_cnnet(cnnet *cnn, matrix *labels) {
 
   for (uint32_t l = 0; l < cnn->n_layers; l++) {
-    if (cnn->layers[l].input && cnn->layers[l].input->grad)
-      memset(cnn->layers[l].input->grad, 0,
-             cnn->layers[l].input->len * sizeof(float));
-    if (cnn->layers[l].z_out && cnn->layers[l].z_out->grad)
-      memset(cnn->layers[l].z_out->grad, 0,
-             cnn->layers[l].z_out->len * sizeof(float));
-    if (cnn->layers[l].output && cnn->layers[l].output->grad)
-      memset(cnn->layers[l].output->grad, 0,
-             cnn->layers[l].output->len * sizeof(float));
+    cnnet_layer *cnn_l=cnn->layers+l;
+    if (cnn_l->in && cnn_l->in->grad)
+      memset(cnn_l->in->grad, 0, cnn_l->in->len * sizeof(float));
+    if (cnn_l->out && cnn_l->out->grad)
+      memset(cnn_l->out->grad, 0, cnn_l->out->len * sizeof(float));
   }
 
   for (int32_t l = cnn->n_layers - 1; l >= 0; l--) {
-
-    tensor *in = cnn->layers[l].input;
-    tensor *z_out = cnn->layers[l].z_out;
-    tensor *output = cnn->layers[l].output;
-    uint32_t kh = cnn->layers[l].kh;
-    uint32_t kw = cnn->layers[l].kw;
-    uint32_t stride = cnn->layers[l].stride;
-    switch (cnn->layers[l].l_type) {
-    case DENSE_LAYER: {
-      nnet *mlp = cnn->layers[l].l_tag.dense.mlp;
-      backprop(labels, cnn->layers[l].l_tag.dense.mlp);
-      break;
-    }
-    case POOLING_LAYER: {
-      max_pooling_backward(output, in, cnn->layers[l].l_tag.pool.mask);
-      break;
-    }
-    case CONV_LAYER: {
-      matrix *dZ_mat = cnn->layers[l].l_tag.conv.dZ_mat;
-      matrix *W_mat = cnn->layers[l].l_tag.conv.W_mat;
-      matrix *dbias_mat = cnn->layers[l].l_tag.conv.d_bias;
-      matrix *t_W_mat = cnn->layers[l].l_tag.conv.t_W_mat;
-      matrix *dW_mat = cnn->layers[l].l_tag.conv.dW_mat;
-      matrix *in_mat = cnn->layers[l].l_tag.conv.in_mat;
-      matrix *t_in_mat = cnn->layers[l].l_tag.conv.t_in_mat;
-      uint32_t padd = cnn->layers[l].l_tag.conv.padding;
-
-      
-      memset(dbias_mat->data, 0, dbias_mat->len * sizeof(float));
-
-      transpose_by(W_mat, t_W_mat);
-      transpose_by(in_mat, t_in_mat);
-
-      for (int i = 0; i < z_out->len; i++) {
-        float dz = output->grad[i];
-        float z = z_out->data[i];
-        AFUNC_TYPE act = cnn->layers[l].activation;
-        dz *= (act == RELU)      ? d_ReLU(z)
+    cnnet_layer *cnn_l=cnn->layers+l;
+    tensor *in  = cnn_l->in;
+    tensor *out = cnn_l->out;
+    uint32_t kh = cnn_l->kh;
+    uint32_t kw = cnn_l->kw;
+    uint32_t stride = cnn_l->stride;
+    switch (cnn_l->l_type) {
+    case MLP_LAYER: backprop(labels, cnn_l->tag.mlp);
+    break;
+    case POOLING_LAYER: max_pooling_backward(out, in, cnn_l->tag.pool.mask);    
+    break;
+    case ACTIV_CNN: {
+      for (int i = 0; i < in->len; i++) {
+        activ_func act = cnn_l->tag.activ.activation;
+        float dz = out->grad[i];
+        float z = in->data[i];
+        dz *=   (act == RELU)    ? d_ReLU(z)
               : (act == L_RELU)  ? d_leaky_ReLU(z)
               : (act == SIGMOID) ? d_sigmoid(z)
+              : (act == SILU)    ? d_silu(z)
               : (act == TANH)    ? d_tanh(z)
                                  : z;
-        z_out->grad[i] = dz;
+        in->grad[i] = dz;
       }
-      for (int b = 0; b < output->N; b++)
-        for (int h = 0; h < output->H; h++)
-          for (int w = 0; w < output->W; w++) {
-            int patch = b * (output->H * output->W) + h * output->W + w;
-            for (int k = 0; k < output->C; k++) {
-              int idx = ((b * output->H + h) * output->W + w) * output->C + k;
-              dZ_mat->data[k * dZ_mat->col + patch] = z_out->grad[idx];
-            }
-          }
-
-      for (int k = 0; k < cnn->layers[l].l_tag.conv.filters; k++) {
+    }break;
+    case CONV_LAYER: {
+      conv_linear_l *conv=&cnn_l->tag.conv;
+      matrix *dZ_mat    = conv->dZ_mat;
+      matrix *W_mat     = conv->W_mat;
+      matrix *dbias_mat = conv->d_bias;
+      matrix *t_W_mat   = conv->t_W_mat;
+      matrix *dW_mat    = conv->dW_mat;
+      matrix *in_mat    = conv->in_mat;
+      matrix *t_in_mat  = conv->t_in_mat;
+      uint32_t padd     = conv->padding;
+    
+      tensor_to_matrix_NHWC(dZ_mat,out,0);
+      memset(dbias_mat->data, 0, dbias_mat->len * sizeof(float));
+      for (int k = 0; k < conv->filters; k++) {
         float sum = 0;
         for (int j = 0; j < dZ_mat->col; j++)
           sum += dZ_mat->data[k * dZ_mat->col + j];
         dbias_mat->data[k] += sum;
       }
+      transpose_by(W_mat, t_W_mat);
+      transpose_by(in_mat, t_in_mat);
       threaded_matmult(dZ_mat, t_in_mat, dW_mat, NN, true, cnn->tp);
       threaded_matmult(t_W_mat, dZ_mat, in_mat, NN, true, cnn->tp);
-      memset(in_mat->data, 0, in_mat->len * sizeof(float));
+      
       col2im(in, in_mat, kh, kw, stride, padd);
       break;
     }
@@ -256,29 +213,27 @@ void backprop_cnnet(cnnet *cnn, matrix *labels) {
 
 void update_cnnet(cnnet *cnn) {
   for (uint32_t l = 0; l < cnn->n_layers; l++) {
-    switch (cnn->layers[l].l_type) {
+    cnnet_layer *cnn_l=cnn->layers+l;
+    switch (cnn_l->l_type) {
     case CONV_LAYER: {
 
-      matrix *W = cnn->layers[l].l_tag.conv.W_mat;
+      matrix *W  = cnn_l->tag.conv.W_mat;
+      matrix *mW = cnn_l->tag.conv.mW_mat;
+      matrix *vW = cnn_l->tag.conv.vW_mat;
+      matrix *dW = cnn_l->tag.conv.dW_mat;
 
-      matrix *mW = cnn->layers[l].l_tag.conv.mW_mat;
-      matrix *vW = cnn->layers[l].l_tag.conv.vW_mat;
-      matrix *dW = cnn->layers[l].l_tag.conv.dW_mat;
-
-      matrix *bias = cnn->layers[l].l_tag.conv.bias;
-      matrix *mb = cnn->layers[l].l_tag.conv.mb_mat;
-      matrix *vb = cnn->layers[l].l_tag.conv.vb_mat;
-      matrix *d_bias = cnn->layers[l].l_tag.conv.d_bias;
+      matrix *bias = cnn_l->tag.conv.bias;
+      matrix *mb   = cnn_l->tag.conv.mb_mat;
+      matrix *vb   = cnn_l->tag.conv.vb_mat;
+      matrix *d_bias = cnn_l->tag.conv.d_bias;
       ADAMW_correction(W, mW, vW, dW, cnn->b1, cnn->b2, cnn->learn_rt,
                        cnn->t_step, 0);
       ADAMW_correction(bias, mb, vb, d_bias, cnn->b1, cnn->b2, cnn->learn_rt,
                        cnn->t_step, 0);
       break;
     }
-    case DENSE_LAYER: {
-      update_layers_adamw(cnn->layers[l].l_tag.dense.mlp);
-      break;
-    }
+    case MLP_LAYER: update_layers_adamw(cnn_l->tag.mlp);
+    break;
     }
   }
   cnn->t_step++;
@@ -288,7 +243,7 @@ void run_cnnet(size_t epoch_max, cnnet *cnet, data_loader *dtl, STATE_RUN state,
                FILE *fout) {
   fputs("epoch,error,acc\n", fout);
   puts("\nstart\n");
-  tensor *in = cnet->layers[0].input;
+  tensor *in = cnet->layers[0].in;
   matrix batch_in = {
       .row = in->N,
       .col = in->H * in->W * in->C,
@@ -396,7 +351,7 @@ void col2im(tensor *input, matrix *buffer, int k_w, int k_h, int stride,
                   in_w < input->W) {
                 uint32_t pos =
                     ((b * input->H + in_h) * input->W + in_w) * input->C + c;
-                input->data[pos] += *p_buff;
+                input->grad[pos] += *p_buff;
               }
             }
           }

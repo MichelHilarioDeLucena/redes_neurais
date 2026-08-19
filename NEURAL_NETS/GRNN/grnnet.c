@@ -176,8 +176,8 @@ void forward_grnnet(grnnet *grnn) {
           matrix_sum(gru->r[t], grn_l->y2, gru->r[t]);
         }
 
-        matrix_sum_broadcast(gru->z[t], gru->b_z);
-        matrix_sum_broadcast(gru->r[t], gru->b_r);
+        matrix_sum_by_col(gru->z[t], gru->b_z);
+        matrix_sum_by_col(gru->r[t], gru->b_r);
 
         float *end = gru->z[t]->end;
         float *p_z = gru->z[t]->data, *p_r = gru->r[t]->data;
@@ -197,7 +197,7 @@ void forward_grnnet(grnnet *grnn) {
                            grnn->tp);
         }
 
-        matrix_sum_broadcast(gru->n[t], gru->b_n);
+        matrix_sum_by_col(gru->n[t], gru->b_n);
 
         end = gru->n[t]->end;
         for (end = gru->n[t]->end; p_n < end; p_n++)
@@ -219,13 +219,13 @@ void forward_grnnet(grnnet *grnn) {
           threaded_matmult(grn_l->in[t], dense->W, grn_l->out[0], NN, true,
                            grnn->tp);
 
-          matrix_sum_broadcast(grn_l->out[0], dense->b);
+          matrix_sum_by_col(grn_l->out[0], dense->b);
           log_softmax(grn_l->out[0]);
         }
         if (grnn->mode == MANY_TO_MANY) {
           threaded_matmult(grn_l->in[t], dense->W, grn_l->out[t], NN, true,
                            grnn->tp);
-          matrix_sum_broadcast(grn_l->out[t], dense->b);
+          matrix_sum_by_col(grn_l->out[t], dense->b);
           log_softmax(grn_l->out[t]);
         }
       } break;

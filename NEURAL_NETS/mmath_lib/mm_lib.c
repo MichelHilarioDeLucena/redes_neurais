@@ -18,7 +18,7 @@ matrix *new_matrix(uint32_t row, uint32_t col) {
 }
 
 matrix *new_matrix_set_data(uint32_t r, uint32_t c, float *data){
-    matrix *new_m = malloc(sizeof(matrix));
+  matrix *new_m = malloc(sizeof(matrix));
   if(!new_m){
     perror("ERRO:falha em alocar mem.");
     exit(1);
@@ -70,16 +70,6 @@ void matrix_sum(matrix *a, matrix *b, matrix *c) {
     *pc++ = *pa++ + *pb++;
 }
 
-void matrix_sum_broadcast(matrix *o, matrix *b) {
-  float *po = o->data;
-  for (uint32_t r = 0; r < o->row; r++) {
-    float *pb = b->data;
-    float *end_row = po + o->col;
-    while (po < end_row)
-      *po++ += *pb++;
-  }
-}
-
 void matrix_sub(matrix *a, matrix *b, matrix *c) {
   float *pa = a->data, *pb = b->data, *pc = c->data;
   float *end = pc + c->len;
@@ -114,6 +104,24 @@ void matrix_scalar_sum(matrix *a, float k) {
     *pa = *pa + k;
 }
 
+void matrix_sum_by_row(matrix *o, matrix *b) {
+  float *po = o->data;
+  float *pb = b->data;
+  for (uint32_t r = 0; r < o->row; r++,pb++) {
+    float *end_row = po + o->col;
+    for (;po < end_row;po++) *po += *pb;
+  }
+}
+
+void matrix_sum_by_col(matrix *o, matrix *b) {
+  float *po = o->data;
+  for (uint32_t r = 0; r < o->row; r++) {
+    float *pb = b->data;
+    float *end_row = po + o->col;
+    for (;po < end_row;po++) *po += *pb++;
+  }
+}
+
 void matrix_scalar_sub(matrix *a, float k) {
   float *pa = a->data;
   float *end = a->end;
@@ -140,6 +148,36 @@ void matrix_scalar_prod(matrix *a, float k) {
   float *end = pa + a->len;
   for (; pa < end; pa++)
     *pa = *pa * k;
+}
+
+void matrix_to_tensor_NHWC(matrix *out_mat, tensor *output,uint32_t use_data){
+  uint32_t N = output->N, H = output->H, W = output->W, C = output->C;
+  float *op = out_mat->data;
+  float *tp = use_data? output->data:output->grad;
+
+  for (uint32_t n = 0; n < N; n++)
+    for (uint32_t h = 0; h < H; h++)
+      for (uint32_t w = 0; w < W; w++)
+        for (uint32_t c = 0; c < C; c++) {
+          uint32_t idx = c * (N * H * W) + (n * H + h) * W + w;
+          uint32_t tidx = ((n * H + h) * W + w) * C + c;
+          tp[tidx] = op[idx];
+        }
+}
+
+void tensor_to_matrix_NHWC(matrix *out_mat, tensor *output,uint32_t use_data){
+  uint32_t N = output->N, H = output->H, W = output->W, C = output->C;
+  float *op = out_mat->data;
+  float *tp = use_data? output->data:output->grad;
+
+  for (uint32_t n = 0; n < N; n++)
+    for (uint32_t h = 0; h < H; h++)
+      for (uint32_t w = 0; w < W; w++)
+        for (uint32_t c = 0; c < C; c++) {
+          uint32_t idx = c * (N * H * W) + (n * H + h) * W + w;
+          uint32_t tidx = ((n * H + h) * W + w) * C + c;
+          op[idx] = tp[tidx];
+        }
 }
 
 void SGD(matrix *theta, matrix *d_theta,float lr,float max_norm){

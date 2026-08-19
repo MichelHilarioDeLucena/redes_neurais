@@ -15,7 +15,7 @@ typedef enum STATE_RUN {
 
 typedef struct scheme_rnn{
     uint32_t input_size,hidden_size,out_size;
-    AFUNC_TYPE activ;
+    activ_func activ;
 }scheme_rnn;
 
 typedef struct rnnet_layer{
@@ -39,7 +39,7 @@ typedef struct rnnet_layer{
     matrix *db_o;
 
     matrix **dh;
-    AFUNC_TYPE activ;
+    activ_func activ;
 }rnnet_layer;
 
 typedef struct rnnet{

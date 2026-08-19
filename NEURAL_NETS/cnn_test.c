@@ -26,12 +26,12 @@ int main() {
   scheme_nn scheme_mlp[] = {
     {	.type=DENSE_LINEAR,
       .tag.linear={.hidden_size=120} },
-    {	.type=BATCH_NORM },
-    {	.type=ACTIVATION,.tag.activ_l={.activ=RELU} },
+    {	.type=BATCH_NORM_MLP },
+    {	.type=ACTIV_MLP,.tag.activ_l={.activ=RELU} },
     {	.type=DENSE_LINEAR,
       .tag.linear={.hidden_size=84} },
-    {	.type=BATCH_NORM },
-    {	.type=ACTIVATION,.tag.activ_l={.activ=RELU} },
+    {	.type=BATCH_NORM_MLP },
+    {	.type=ACTIV_MLP,.tag.activ_l={.activ=RELU} },
     { .type=DENSE,
       .tag.dense={.activ= LOG_SOFTMAX,.hidden_size=n_out}}
   };
@@ -43,6 +43,7 @@ int main() {
       .b2 = .999f,
       .batch_size = batch_size,
       .input_size = data_ld->stride_in,
+      .input_data = NULL,
       .lambda = .0f,
       .p_alive = 1.f,
       .rstate = &rand,
@@ -52,25 +53,21 @@ int main() {
   };
   scheme_cnn scheme[] = {
       {.type = CONV_LAYER,
-       .activation = RELU,
-       .kh = 5,
-       .kw = 5,
-       .stride = 1,
+       .kh = 5,.kw = 5,.stride = 1,
        .conv = {.filters = 6, .padding = 0}},
+      {.type = ACTIV_CNN , .activ.activation = RELU},
 
       {.type = POOLING_LAYER, .kh = 2, .kw = 2, .stride = 2},
 
       {.type = CONV_LAYER,
-       .activation = RELU,
-       .kh = 5,
-       .kw = 5,
-       .stride = 1,
+       .kh = 5,.kw = 5,.stride = 1,
        .conv = {.filters = 16, .padding = 0}},
+      {.type = ACTIV_CNN , .activ.activation = RELU},
 
       {.type = POOLING_LAYER, .kh = 2, .kw = 2, .stride = 2},
 
-      {.type = DENSE_LAYER,
-       .dense = {.scheme_mlp = scheme_mlp, .params_mlp = &params_mlp}}};
+      {.type = MLP_LAYER,
+       .mlp = {.scheme_mlp = scheme_mlp, .params_mlp = &params_mlp}}};
 
   uint32_t const N_LAYERS = sizeof(scheme) / sizeof(scheme_cnn);
   cnnet_params params = {.in_N = batch_size,

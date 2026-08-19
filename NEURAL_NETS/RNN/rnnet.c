@@ -105,7 +105,7 @@ void forward_rnnet(rnnet *rnn) {
       threaded_matmult(layer->h[t], layer->W_hh, layer->y_h, NN, true,rnn->tp);
       matrix_sum(layer->z[t], layer->y_h, layer->z[t]);
 
-      matrix_sum_broadcast(layer->z[t], layer->b_h);
+      matrix_sum_by_col(layer->z[t], layer->b_h);
 
       float *p_h = layer->h[t + 1]->data;
       float *end = layer->h[t + 1]->end;
@@ -135,7 +135,7 @@ void forward_rnnet(rnnet *rnn) {
       }
       if (l == rnn->n_layers - 1 && t == rnn->time_step - 1) {
         threaded_matmult(layer->h[t + 1], layer->W_oh, layer->out[t], NN, true,rnn->tp);
-        matrix_sum_broadcast(layer->out[t], layer->b_o);
+        matrix_sum_by_col(layer->out[t], layer->b_o);
         log_softmax(layer->out[t]);
       }
     }

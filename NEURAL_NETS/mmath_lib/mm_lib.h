@@ -114,11 +114,14 @@ void matrix_hadd_dot(matrix *a, matrix *b, matrix *c);
 void matrix_hadd_dot_scalar(matrix *a, matrix *b, matrix *c, float k);
 
 void matrix_scalar_sum(matrix *a, float k);
-void matrix_sum_broadcast(matrix *o, matrix *b);
+void matrix_sum_by_row(matrix *o, matrix *b);
+void matrix_sum_by_col(matrix *o, matrix *b);
 void matrix_scalar_sub(matrix *a, float k);
 void matrix_scalar_k_sub_b(matrix *a, float k,matrix *b);
 void matrix_hadd_scalar_k_sub_b(matrix *a,matrix *b,matrix *c,float k);
 void matrix_scalar_prod(matrix *a, float k);
+void matrix_to_tensor_NHWC(matrix *out_mat, tensor *output,uint32_t use_data);
+void tensor_to_matrix_NHWC(matrix *out_mat, tensor *output,uint32_t use_data);
 void SGD(matrix *theta, matrix *d_theta,float lr,float max_norm);
 
 void init_uniform_distr(matrix *m, uint32_t i, uint32_t o);

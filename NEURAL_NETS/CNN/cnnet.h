@@ -4,11 +4,12 @@
 #include <stdint.h>
 #include <string.h>
 
-typedef enum LAYER_TYPE {
-  CONV_LAYER=1,
-  POOLING_LAYER=4,
-  DENSE_LAYER=8,
-} LAYER_TYPE;
+typedef enum layer_cnn_t {
+  CONV_LAYER   ,
+  ACTIV_CNN    ,
+  POOLING_LAYER,
+  MLP_LAYER    ,
+} layer_cnn_t;
 
 typedef struct cnnet_params {
   uint32_t n_labels, in_N, in_H, in_W, in_C;
@@ -17,40 +18,66 @@ typedef struct cnnet_params {
 } cnnet_params;
 
 typedef struct scheme_cnn {
-  LAYER_TYPE type;
-  AFUNC_TYPE activation;
+  layer_cnn_t type;
+  
   uint32_t stride, kh, kw;
   union {
     struct {
       uint32_t filters, padding;
     } conv;
+    struct {
+      activ_func activation;
+    } activ;
+    struct {
+      uint32_t padd;
+    } pool;
     struct {
       params_nnet *params_mlp;
       scheme_nn *scheme_mlp;
-    } dense;
+    } mlp;
   };
 } scheme_cnn;
 
+typedef struct conv_linear_l{
+  matrix *W_mat, *dW_mat, *bias,*d_bias;
+  matrix *mW_mat, *vW_mat,*mb_mat, *vb_mat;
+  matrix *in_mat,*out_mat,*dZ_mat;
+  matrix *t_W_mat,*t_in_mat;
+  uint32_t filters, padding;
+} conv_linear_l;
+
+typedef struct activ_l_cnn{
+  activ_func activation;
+}activ_l_cnn;
+
+typedef struct poolling_l{
+  uint32_t *mask,padd;
+} poolling_l;
+
+typedef struct b_norm_layer_cnn{
+  float momentum,epsilon;
+  matrix *W_norm, *bias_norm;
+  matrix *dW_norm, *dB_norm;
+
+  matrix *mW, *vW;
+  matrix *mB, *vB;
+  matrix *run_mean, *run_var;
+  matrix *mean_bf, *var_bf;
+  matrix *std_inv,*x_hat,*dx_hat,*sum_dx_hat,*sum_dxx;
+}b_norm_layer_cnn;
+
 typedef struct cnnet_layer {
-  tensor *input, *z_out, *output;
-  LAYER_TYPE l_type;
-  AFUNC_TYPE activation;
+  tensor *in, *out;
+  layer_cnn_t l_type;
+  
   uint32_t stride, kh, kw;
   union {
-    struct {
-      matrix *W_mat, *dW_mat,*dZ_mat, *bias,*d_bias;
-      matrix *mW_mat, *vW_mat,*mb_mat, *vb_mat;
-      matrix *in_mat,*out_mat;
-      matrix *t_W_mat,*t_in_mat;
-      uint32_t filters, padding;
-    } conv;
-    struct {
-      uint32_t *mask;
-    } pool;
-    struct {
-      nnet *mlp;
-    } dense;
-  } l_tag;
+    conv_linear_l conv;
+    activ_l_cnn activ;
+    poolling_l pool;
+    b_norm_layer_cnn bnorm;
+    nnet *mlp;
+  } tag;
 } cnnet_layer;
 
 typedef struct cnnet {

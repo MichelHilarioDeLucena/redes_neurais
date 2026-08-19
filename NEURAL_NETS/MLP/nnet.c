@@ -50,7 +50,7 @@ nnet *create_nnet(scheme_nn scheme[], thread_pool *tp, params_nnet *param) {
         param->batch_size, scheme[0].input_size, param->input_data);
 
   nn_l->grad_in = NULL;
-  printf("%d %d\n",n_layers,param->n_layers);
+  
   for (uint32_t l = 0; l < param->n_layers; l++,nn_l++) {
     nn_l->t_layer = scheme[l].type;
     if (l > 0) {
@@ -77,7 +77,7 @@ nnet *create_nnet(scheme_nn scheme[], thread_pool *tp, params_nnet *param) {
       init_linear(net,nn_l,hsize,use_b); 
     } break;
     case ACTIV_MLP:     { init_activ(net,nn_l,scheme[l].tag.activ_l.activ); } break;
-    case BATCH_NORM_MLP:    { init_bnorm(net,nn_l); puts("BN chamada.");} break;
+    case BATCH_NORM_MLP:    { init_bnorm(net,nn_l);} break;
     }
   }
 
@@ -94,7 +94,7 @@ void forward_pass(nnet *net, STATE_RUN state) {
       linear_layer *linear = &nn_l->type.linear;
       threaded_matmult(nn_l->in, linear->W, nn_l->out, NN, true, net->tp);
       if (linear->bias)
-        matrix_sum_broadcast(nn_l->out, linear->bias);
+        matrix_sum_by_col(nn_l->out, linear->bias);
     } break;
     case ACTIV_MLP: {
       activation_layer *activ = &nn_l->type.activ;
@@ -188,6 +188,7 @@ void forward_pass(nnet *net, STATE_RUN state) {
     }
     }
   }
+  
 }
 
 void backprop(matrix *target, nnet *net) {
