@@ -84,6 +84,37 @@ cnnet *create_cnnet(scheme_cnn *scheme, uint32_t n_layers,
       cnn_l->out = new_tensor_grad_init(params->in_N, ho, wo, in->C);
       pool->mask =calloc(cnn_l->out->len, sizeof(uint32_t));
     }break;
+    case BATCH_NORM_CNN: {
+      b_norm_layer_cnn *bnorm = &cnn_l->tag.bnorm;
+      uint32_t isize = in->N*in->H*in->W;
+      uint32_t osize = in->C;
+      bnorm->momentum = .99f;
+      bnorm->epsilon = 1e-5f;
+      bnorm->W_norm = new_matrix(1, osize);
+      bnorm->bias_norm = new_matrix(1, osize);
+      bnorm->dW_norm = new_matrix(1, osize);
+      bnorm->dB_norm = new_matrix(1, osize);
+      bnorm->run_mean = new_matrix(1, osize);
+      bnorm->run_var = new_matrix(1, osize);
+      bnorm->mean_bf = new_matrix(1, osize);
+      bnorm->var_bf = new_matrix(1, osize);
+      bnorm->std_inv = new_matrix(1, osize);
+      bnorm->mW = new_matrix(1, osize);
+      bnorm->mB = new_matrix(1, osize);
+      bnorm->vW = new_matrix(1, osize);
+      bnorm->vB = new_matrix(1, osize);
+      bnorm->x_hat  = new_matrix(isize, osize);
+      bnorm->dx_hat = new_matrix(isize, osize);
+      bnorm->sum_dx_hat = new_matrix(1, osize);
+      bnorm->sum_dxx = new_matrix(1, osize);
+
+      bnorm->in_mat = new_matrix(isize, osize);
+      bnorm->out_mat = new_matrix(isize, osize);
+      float *p = bnorm->W_norm->data;
+      float *end = bnorm->W_norm->end;
+      while (p < end) *p++ = 1.0f;
+      cnn_l->out = new_tensor_grad_init(in->N, in->H, in->W, in->C);
+    }break;
     case MLP_LAYER: {
       uint32_t input_size = in->H * in->W * in->C;
       scheme_nn *scheme_mlp= scheme[l].mlp.scheme_mlp;
@@ -121,7 +152,7 @@ void forward_cnnet(cnnet *cnn, STATE_RUN state_run) {
       im2col(in, in_mat, kw, kh, stride, padd);
       threaded_matmult(W_mat, in_mat, out_mat, NN, true, cnn->tp);
       matrix_sum_by_row(out_mat,conv->bias);
-      matrix_to_tensor_NHWC(out_mat,out,1);
+      matrix_to_tensor_NHWC(out_mat,out,TENSOR_DATA);
     }break;
     case ACTIV_CNN: {
       activ_func act = cnn_l->tag.activ.activation;
@@ -137,6 +168,70 @@ void forward_cnnet(cnnet *cnn, STATE_RUN state_run) {
     case POOLING_LAYER: {
       uint32_t *mask = cnn_l->tag.pool.mask;
       max_pooling(in, out, mask, kh, kw, stride, 0);
+    }break;
+    case BATCH_NORM_CNN:{
+      b_norm_layer_cnn *bnorm = &cnn_l->tag.bnorm;
+      tensor_to_matrix_NHWC(bnorm->in_mat, in, TENSOR_DATA);
+      matrix *in_mat=bnorm->in_mat;
+      
+      uint32_t M = in_mat->row;
+      uint32_t N = in_mat->col;
+      uint32_t len = M * N;
+      float *in = in_mat->data;
+
+      memset(bnorm->mean_bf->data, 0, N * sizeof(float));
+      memset(bnorm->var_bf->data, 0, N * sizeof(float));
+      if (state_run == TRAIN) {
+        float over_b = 1.f / in_mat->row;
+        float mmtun = bnorm->momentum;
+        for (uint32_t i = 0; i < len; i += N)
+          for (uint32_t j = 0; j < N; j++)
+            bnorm->mean_bf->data[j] += in[i + j];
+        for (uint32_t j = 0; j < N; j++)
+          bnorm->mean_bf->data[j] *= over_b;
+
+        for (uint32_t i = 0; i < len; i += N)
+          for (uint32_t j = 0; j < N; j++) {
+            float diff = in[i + j] - bnorm->mean_bf->data[j];
+            bnorm->var_bf->data[j] += diff * diff;
+          }
+        for (uint32_t j = 0; j < N; j++)
+          bnorm->var_bf->data[j] *= over_b;
+        for (uint32_t j = 0; j < N; j++) {
+          float mean = bnorm->mean_bf->data[j];
+          float var = bnorm->var_bf->data[j];
+          float r_mean = bnorm->run_mean->data[j];
+          float r_var = bnorm->run_var->data[j];
+          bnorm->run_mean->data[j] = r_mean * mmtun + (1 - mmtun) * mean;
+          bnorm->run_var->data[j] = r_var * mmtun + (1 - mmtun) * var;
+        }
+      }
+      float *mean_ptr, *var_ptr;
+      float *x_hat = bnorm->x_hat->data;
+      float *W = bnorm->W_norm->data;
+      float *b = bnorm->bias_norm->data;
+      float *r_mean = bnorm->run_mean->data;
+      float *inv_std = bnorm->std_inv->data;
+
+      if (state_run == TRAIN) {
+        mean_ptr = bnorm->mean_bf->data;
+        var_ptr = bnorm->var_bf->data;
+      } else {
+        mean_ptr = bnorm->run_mean->data;
+        var_ptr = bnorm->run_var->data;
+      }
+
+      for (uint32_t j = 0; j < N; j++)
+        bnorm->std_inv->data[j] = 1.f / sqrtf(var_ptr[j] + bnorm->epsilon);
+
+      for (uint32_t i = 0; i < len; i += N)
+        for (uint32_t j = 0; j < N; j++)
+          x_hat[i + j] = (in[i + j] - mean_ptr[j]) * inv_std[j];
+
+      for (uint32_t i = 0; i < len; i += N)
+        for (uint32_t j = 0; j < N; j++)
+          bnorm->out_mat->data[i + j] = x_hat[i + j] * W[j] + b[j];
+      matrix_to_tensor_NHWC(bnorm->out_mat, out, TENSOR_DATA);
     }break;
     case MLP_LAYER: forward_pass(cnn_l->tag.mlp, state_run);
     break;
@@ -162,8 +257,46 @@ void backprop_cnnet(cnnet *cnn, matrix *labels) {
     uint32_t kw = cnn_l->kw;
     uint32_t stride = cnn_l->stride;
     switch (cnn_l->l_type) {
-    case MLP_LAYER: backprop(labels, cnn_l->tag.mlp);
-    break;
+    case MLP_LAYER: backprop(labels, cnn_l->tag.mlp);break;
+    case BATCH_NORM_CNN: {
+      b_norm_layer_cnn *bnorm = &cnn_l->tag.bnorm;
+      memset(bnorm->dW_norm->data, 0, bnorm->dW_norm->len * sizeof(float));
+      memset(bnorm->dB_norm->data, 0, bnorm->dB_norm->len * sizeof(float));
+      tensor_to_matrix_NHWC(bnorm->out_mat, out, TENSOR_GRAD);
+      matrix *dout_mat = bnorm->out_mat;
+      float *dout = dout_mat->data;
+      float *x_hat = bnorm->x_hat->data;
+      uint32_t M = dout_mat->row;
+      uint32_t N = dout_mat->col, len = M * N;
+
+      for (uint32_t i = 0; i < len; i += N)
+        for (uint32_t j = 0; j < N; j++)
+          bnorm->dW_norm->data[j] += dout[i + j] * x_hat[i + j],
+              bnorm->dB_norm->data[j] += dout[i + j];
+
+      if (cnn_l->in->grad) {
+        float *sum_dx_hat = bnorm->sum_dx_hat->data;
+        float *sum_dxx = bnorm->sum_dxx->data;
+        float one_invM = 1.0f / M;
+        float *din = bnorm->in_mat->data;
+        float *std_inv = bnorm->std_inv->data;
+        float *dx_hat = bnorm->dx_hat->data;
+        memset(bnorm->sum_dx_hat->data, 0, N * sizeof(float));
+        memset(bnorm->sum_dxx->data, 0, N * sizeof(float));
+        for (uint32_t i = 0; i < len; i += N)
+          for (uint32_t j = 0; j < N; j++)
+            dx_hat[i + j] = dout[i + j] * bnorm->W_norm->data[j],
+                       sum_dx_hat[j] += dx_hat[i + j],
+                       sum_dxx[j] += dx_hat[i + j] * x_hat[i + j];
+
+        for (uint32_t i = 0; i < len; i += N)
+          for (uint32_t j = 0; j < N; j++)
+            din[i + j] =
+                std_inv[j] * one_invM *
+                (M * dx_hat[i + j] - sum_dx_hat[j] - x_hat[i + j] * sum_dxx[j]);
+        matrix_to_tensor_NHWC(bnorm->in_mat, in, TENSOR_GRAD);
+      }
+    } break;
     case POOLING_LAYER: max_pooling_backward(out, in, cnn_l->tag.pool.mask);    
     break;
     case ACTIV_CNN: {
@@ -191,7 +324,8 @@ void backprop_cnnet(cnnet *cnn, matrix *labels) {
       matrix *t_in_mat  = conv->t_in_mat;
       uint32_t padd     = conv->padding;
     
-      tensor_to_matrix_NHWC(dZ_mat,out,0);
+      tensor_to_matrix_NHWC(dZ_mat,out,TENSOR_GRAD);
+      
       memset(dbias_mat->data, 0, dbias_mat->len * sizeof(float));
       for (int k = 0; k < conv->filters; k++) {
         float sum = 0;

@@ -150,10 +150,10 @@ void matrix_scalar_prod(matrix *a, float k) {
     *pa = *pa * k;
 }
 
-void matrix_to_tensor_NHWC(matrix *out_mat, tensor *output,uint32_t use_data){
+void matrix_to_tensor_NHWC(matrix *out_mat, tensor *output,tensor_data_t use_data){
   uint32_t N = output->N, H = output->H, W = output->W, C = output->C;
   float *op = out_mat->data;
-  float *tp = use_data? output->data:output->grad;
+  float *tp = (use_data == TENSOR_DATA) ? output->data : output->grad;
 
   for (uint32_t n = 0; n < N; n++)
     for (uint32_t h = 0; h < H; h++)
@@ -165,10 +165,10 @@ void matrix_to_tensor_NHWC(matrix *out_mat, tensor *output,uint32_t use_data){
         }
 }
 
-void tensor_to_matrix_NHWC(matrix *out_mat, tensor *output,uint32_t use_data){
+void tensor_to_matrix_NHWC(matrix *out_mat, tensor *output,tensor_data_t use_data){
   uint32_t N = output->N, H = output->H, W = output->W, C = output->C;
   float *op = out_mat->data;
-  float *tp = use_data? output->data:output->grad;
+  float *tp = (use_data == TENSOR_DATA) ? output->data : output->grad;
 
   for (uint32_t n = 0; n < N; n++)
     for (uint32_t h = 0; h < H; h++)

@@ -28,10 +28,12 @@ int main() {
       .tag.linear={.hidden_size=120} },
     {	.type=BATCH_NORM_MLP },
     {	.type=ACTIV_MLP,.tag.activ_l={.activ=RELU} },
+
     {	.type=DENSE_LINEAR,
       .tag.linear={.hidden_size=84} },
     {	.type=BATCH_NORM_MLP },
     {	.type=ACTIV_MLP,.tag.activ_l={.activ=RELU} },
+
     { .type=DENSE,
       .tag.dense={.activ= LOG_SOFTMAX,.hidden_size=n_out}}
   };
@@ -55,6 +57,7 @@ int main() {
       {.type = CONV_LAYER,
        .kh = 5,.kw = 5,.stride = 1,
        .conv = {.filters = 6, .padding = 0}},
+      {.type=BATCH_NORM_CNN},
       {.type = ACTIV_CNN , .activ.activation = RELU},
 
       {.type = POOLING_LAYER, .kh = 2, .kw = 2, .stride = 2},
@@ -62,6 +65,7 @@ int main() {
       {.type = CONV_LAYER,
        .kh = 5,.kw = 5,.stride = 1,
        .conv = {.filters = 16, .padding = 0}},
+      {.type=BATCH_NORM_CNN},
       {.type = ACTIV_CNN , .activ.activation = RELU},
 
       {.type = POOLING_LAYER, .kh = 2, .kw = 2, .stride = 2},

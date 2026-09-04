@@ -5,10 +5,11 @@
 #include <string.h>
 
 typedef enum layer_cnn_t {
-  CONV_LAYER   ,
-  ACTIV_CNN    ,
-  POOLING_LAYER,
-  MLP_LAYER    ,
+  CONV_LAYER    ,
+  ACTIV_CNN     ,
+  POOLING_LAYER ,
+  MLP_LAYER     ,
+  BATCH_NORM_CNN,
 } layer_cnn_t;
 
 typedef struct cnnet_params {
@@ -64,6 +65,7 @@ typedef struct b_norm_layer_cnn{
   matrix *run_mean, *run_var;
   matrix *mean_bf, *var_bf;
   matrix *std_inv,*x_hat,*dx_hat,*sum_dx_hat,*sum_dxx;
+  matrix *in_mat,*out_mat;
 }b_norm_layer_cnn;
 
 typedef struct cnnet_layer {

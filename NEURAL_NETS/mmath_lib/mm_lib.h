@@ -21,9 +21,9 @@
       pb = b->data;                                                            \
       float *end_pa = pa + a->col;                                             \
       for (float *pa_elem = pa, *pc_elem; pa_elem < end_pa; pa_elem++) {       \
-        float *end_pc = pc + c->col,a_value=*pa_elem;                                           \
+        float *end_pc = pc + c->col,a_value=*pa_elem;                          \
         for (pc_elem = pc; pc_elem < end_pc; pc_elem++, pb++)                  \
-          *pc_elem += a_value * *pb;                                          \
+          *pc_elem += a_value * *pb;                                           \
       }                                                                        \
     }                                                                          \
   } break;                                                                     \
@@ -75,11 +75,13 @@ typedef enum activ_func {
 } activ_func;
 
 typedef enum type_matmult {
-  NN,
-  TN,
-  NT,
-  TT,
+  NN,TN,NT,TT,
 } type_matmult;
+
+typedef enum {
+    TENSOR_DATA,
+    TENSOR_GRAD
+} tensor_data_t;
 
 typedef struct tensor {
   float *data, *data_end;
@@ -120,8 +122,8 @@ void matrix_scalar_sub(matrix *a, float k);
 void matrix_scalar_k_sub_b(matrix *a, float k,matrix *b);
 void matrix_hadd_scalar_k_sub_b(matrix *a,matrix *b,matrix *c,float k);
 void matrix_scalar_prod(matrix *a, float k);
-void matrix_to_tensor_NHWC(matrix *out_mat, tensor *output,uint32_t use_data);
-void tensor_to_matrix_NHWC(matrix *out_mat, tensor *output,uint32_t use_data);
+void matrix_to_tensor_NHWC(matrix *out_mat, tensor *output,tensor_data_t use_data);
+void tensor_to_matrix_NHWC(matrix *out_mat, tensor *output,tensor_data_t use_data);
 void SGD(matrix *theta, matrix *d_theta,float lr,float max_norm);
 
 void init_uniform_distr(matrix *m, uint32_t i, uint32_t o);
