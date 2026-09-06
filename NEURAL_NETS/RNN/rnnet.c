@@ -299,3 +299,54 @@ void out_nnet(rnnet *rnn, data_loader *dtl, char *namef) {
   run_nnet(1, rnn, dtl, TEST, file_test);
   fclose(file_test);
 }
+
+void destroy_rnn(rnnet *rnn){
+  
+  for (uint32_t l = 0; l < rnn->n_layers; l++) {
+    rnnet_layer *layer = rnn->layers + l;
+    destroy_matrix(layer->h[rnn->time_step]);
+    for (uint32_t t = 0; t < rnn->time_step; t++) {
+      destroy_matrix(layer->h[t] );
+      destroy_matrix(layer->z[t] );
+      destroy_matrix(layer->dz[t]);
+      destroy_matrix(layer->dh[t]);
+    }
+    free(layer->h );
+    free(layer->z );
+    free(layer->dz);
+    free(layer->dh);
+    
+    destroy_matrix(layer->W_ih );
+    destroy_matrix(layer->dW_ih);
+
+    destroy_matrix(layer->W_hh );
+    destroy_matrix(layer->dW_hh);
+
+    destroy_matrix(layer->b_h );
+    destroy_matrix(layer->db_h);
+
+    destroy_matrix(layer->y_h);
+    
+  }
+  uint32_t last = rnn->n_layers - 1;
+  rnnet_layer *last_l = rnn->layers + last;
+  
+  for (uint32_t t = 0; t < rnn->time_step; t++)
+    destroy_matrix(last_l->out[t] ),
+    destroy_matrix(last_l->dout[t]);
+   free(last_l->out );
+   free(last_l->dout);
+  destroy_matrix(last_l->W_oh);
+  
+  destroy_matrix(last_l->dW_oh);
+  destroy_matrix(last_l->b_o  );
+  destroy_matrix(last_l->db_o );
+
+  for (uint32_t t = 0; t < rnn->time_step; t++)
+    destroy_matrix(rnn->layers->in[t]);
+  free(rnn->layers->in);
+  
+  free(rnn->layers);
+  destroy_thread_pool(rnn->tp);  
+  free(rnn);
+}

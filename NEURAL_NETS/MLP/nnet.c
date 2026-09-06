@@ -526,34 +526,72 @@ void init_bnorm(nnet *net,nnet_layer *nn_l){
 }
 
 void destroy_nnet(nnet *net) {
-  for (int l = 0; l < net->n_layers - 1; l++) {
-    nnet_layer *nn_l = net->layers + l;
-    free(nn_l->t_in);
+  for (uint32_t l = 0; l < net->n_layers; l++) {
+    nnet_layer *nn_l=net->layers+l;
+    destroy_matrix(nn_l->t_in);
+    
     switch (nn_l->t_layer) {
-    case DENSE_LINEAR: {
-      linear_layer *dense = &nn_l->type.linear;
-      destroy_matrix(dense->W);
-      destroy_matrix(dense->dW);
-      destroy_matrix(dense->mW);
-      destroy_matrix(dense->vW);      
-      if(dense->bias){
-        destroy_matrix(dense->bias);
-        destroy_matrix(dense->dB);
-        destroy_matrix(dense->Z);
-        destroy_matrix(dense->mB);
-        destroy_matrix(dense->vB);        
+    case DENSE_LINEAR:  { 
+      linear_layer *linear=&nn_l->type.linear;
+      destroy_matrix(linear->W  );
+      destroy_matrix(linear->tW);
+      destroy_matrix(linear->mW);
+      destroy_matrix(linear->vW);
+      destroy_matrix(linear->dW);
+      if(linear->bias){
+        destroy_matrix(linear->bias);
+        destroy_matrix(linear->dB);
+        destroy_matrix(linear->mB);
+        destroy_matrix(linear->vB);
       }
-    } break;
-    case ACTIV_MLP: {
       
+      destroy_matrix(linear->Z     );
+      destroy_matrix(nn_l->out     );
+      destroy_matrix(nn_l->grad_out);
     } break;
-    case BATCH_NORM_MLP: {
-
-    }
+    case ACTIV_MLP:     {
+      activation_layer *activ = &nn_l->type.activ;
+      destroy_matrix(activ->mask   );
+      destroy_matrix(nn_l->out     );
+      destroy_matrix(nn_l->grad_out);
+      } break;
+    case BATCH_NORM_MLP:    { 
+      b_norm_layer *bnorm = &nn_l->type.bnorm;
+      destroy_matrix(bnorm->W_norm    );
+      destroy_matrix(bnorm->bias_norm );
+      destroy_matrix(bnorm->dW_norm   );
+      destroy_matrix(bnorm->dB_norm   );
+      destroy_matrix(bnorm->run_mean  );
+      destroy_matrix(bnorm->run_var   );
+      destroy_matrix(bnorm->mean_bf   );
+      destroy_matrix(bnorm->var_bf    );
+      destroy_matrix(bnorm->std_inv   );
+      destroy_matrix(bnorm->mW        );
+      destroy_matrix(bnorm->mB        );
+      destroy_matrix(bnorm->vW        );
+      destroy_matrix(bnorm->vB        );
+      destroy_matrix(bnorm->x_hat     );
+      destroy_matrix(bnorm->dx_hat    );
+      destroy_matrix(bnorm->sum_dx_hat);
+      destroy_matrix(bnorm->sum_dxx   );
+      destroy_matrix(nn_l->out        );
+      destroy_matrix(nn_l->grad_out   );
+    } break;
     }
   }
+  if(net->layers->in && net->layers->in->data)
+    destroy_matrix(net->layers->in);
+  else free(net->layers->in);
+  if(net->layers->grad_in&&net->layers->grad_in->data)
+    destroy_matrix(net->layers->grad_in);
+  else free(net->layers->grad_in);
+  // if(net->layers->in)
+  //   destroy_matrix(net->layers->in);
+  
+  // if(net->layers[0].grad_in)
+  //     destroy_matrix(net->layers[0].grad_in);
+  if(net->tp)
+    destroy_thread_pool(net->tp);
   free(net->layers);
-
-  destroy_thread_pool(net->tp);
   free(net);
 }

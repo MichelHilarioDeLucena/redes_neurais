@@ -118,7 +118,7 @@ void matrix_sum_by_col(matrix *o, matrix *b) {
   for (uint32_t r = 0; r < o->row; r++) {
     float *pb = b->data;
     float *end_row = po + o->col;
-    for (;po < end_row;po++) *po += *pb++;
+    for (;po < end_row;po++,pb++) *po += *pb;
   }
 }
 
@@ -303,6 +303,67 @@ void apply_dropout(matrix *out, matrix *mask, float p_alive) {
   }
 }
 
+void layer_norm_forward(matrix *lin, matrix *gamma, matrix *beta, matrix *mean,
+                        matrix *var, matrix *std_inv, matrix *x_hat,
+                        float epsilon){
+  uint32_t M=lin->row,N=lin->col;
+  uint32_t len=M*N;
+  memset(mean->data, 0, M * sizeof(float));
+  memset(var->data,  0, M * sizeof(float));
+  float over_N=1.f/N;
+  for(uint32_t i=0,I=0;i<len;i+=N,I++)
+    for(uint32_t j=0;j<N;j++)
+      mean->data[I]+=lin->data[i+j];
+  for(uint32_t i=0;i<M;i++)
+    mean->data[i]*=over_N;
+
+  for(uint32_t i=0,I=0;i<len;i+=N,I++)
+    for(uint32_t j=0;j<N;j++){
+      float diff=lin->data[i+j]-mean->data[I];
+      var->data[I]+=diff*diff;
+    }
+  for(uint32_t i=0;i<M;i++)
+    var->data[i]*=over_N;
+  for(uint32_t i=0;i<M;i++)
+    std_inv->data[i]=1.f/(sqrtf(var->data[i]+epsilon));
+  for(uint32_t i=0,I=0;i<len;i+=N,I++)
+    for(uint32_t j=0;j<N;j++){
+      x_hat->data[i+j]=(lin->data[i+j]-mean->data[I])*std_inv->data[I];
+    }
+  for(uint32_t i=0,I=0;i<len;i+=N,I++)
+    for(uint32_t j=0;j<N;j++){
+      lin->data[i+j]=x_hat->data[i+j]*gamma->data[j]+beta->data[j];
+    }
+}
+
+void layer_norm_backward(matrix *dout, matrix *gamma,
+                        matrix *std_inv, matrix *x_hat,
+                        matrix *dgamma, matrix *dbeta) {
+  uint32_t M = dout->row, N = dout->col;
+  uint32_t len = M * N;
+
+  for (uint32_t i = 0; i < len; i += N)
+    for (uint32_t j = 0; j < N; j++)
+      dgamma->data[j] += dout->data[i + j] * x_hat->data[i + j],
+      dbeta->data[j] += dout->data[i + j];
+  float over_N=1.f/N;
+  for (uint32_t i = 0; i < M; i++) {
+    float sum_dx_hat = 0.0f;
+    float sum_dxx = 0.0f;
+    for (uint32_t j = 0; j < N; j++) {
+        float dh = dout->data[i*N + j] * gamma->data[j];
+        sum_dx_hat += dh;
+        sum_dxx += dh * x_hat->data[i*N + j];
+    }
+    
+    float inv_std = std_inv->data[i];
+    for (uint32_t j = 0; j < N; j++) {
+        float dh = dout->data[i*N + j] * gamma->data[j];
+        dout->data[i*N + j] = inv_std * (dh - (sum_dx_hat + x_hat->data[i*N + j] * sum_dxx) * over_N);
+    }
+  }
+}
+
 void log_softmax(matrix *mat) {
   for (size_t r = 0; r < mat->row; r++) {
     float *row_data = mat->data + r * mat->col;
@@ -364,8 +425,25 @@ float xorshift_float(XorShift64State *state) {
 }
 
 void destroy_matrix(matrix *mat) {
-  free(mat->data);
-  free(mat);
+  if(mat){
+    if(mat->data)
+      free(mat->data);
+    mat->data=NULL;
+    free(mat);
+    mat=NULL;
+  }
+}
+
+void destroy_tensor(tensor *tsr){
+  if(tsr){
+
+    free(tsr->data);
+    tsr->data=NULL;
+    if(tsr->grad)
+      free(tsr->grad);
+    tsr->grad=NULL;
+    free(tsr);
+  }
 }
 
 void sub_timespec(struct timespec t1, struct timespec t2, struct timespec *td) {

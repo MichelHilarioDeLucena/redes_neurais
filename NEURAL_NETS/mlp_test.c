@@ -45,7 +45,7 @@ int main(int argc, char *argv[]) {
   //   { .type=DENSE,
   //     .tag.dense={.activ= LOG_SOFTMAX,.hidden_size=10}}
 	// };
-	size_t batch_size=80, epochs=15;
+	size_t batch_size=80, epochs=1;
   params_nnet params = {
       .off_dropout=OFF_DROPOUT,
       .b1 = .99f,
@@ -65,8 +65,7 @@ int main(int argc, char *argv[]) {
   train_nnet(epochs, mnist_net, data_ld, "mlp_train.csv");
   // save_weights(mnist_net);
   destroy_loader(data_ld);
-
-  // nnet_load(mnist_net,"net_weights1776885940.bin");
+  
   data_ld = mnist_load(test_path_images, test_path_labels);
 
   // set_batch(mnist_net,100);

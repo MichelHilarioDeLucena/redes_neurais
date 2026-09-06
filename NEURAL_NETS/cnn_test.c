@@ -95,6 +95,6 @@ int main() {
   out_cnnet(cnn, data_ld, "cnn_test.csv");
   destroy_loader(data_ld);
   
-
+  destroy_cnnet(cnn);
   return 0;
 }

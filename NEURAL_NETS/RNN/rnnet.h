@@ -57,5 +57,5 @@ void run_nnet(size_t epoch_max, rnnet *rnn, data_loader *dtl, STATE_RUN state,
               FILE *file);
 void train_nnet(size_t epoch_max, rnnet *net, data_loader *dtl, char *namef);
 void out_nnet(rnnet *net, data_loader *dtl, char *namef);
-
+void destroy_rnn(rnnet *rnn);
 #endif

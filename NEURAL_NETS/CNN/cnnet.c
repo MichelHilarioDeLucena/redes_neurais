@@ -127,8 +127,7 @@ cnnet *create_cnnet(scheme_cnn *scheme, uint32_t n_layers,
       cnn_l->tag.mlp->layers[0].grad_in = new_matrix_set_data( in->N,input_size,in->grad);
       cnn_l->tag.mlp->t_step = cnn->t_step;
       
-    }
-    
+    }    
     }
   }
   return cnn;
@@ -523,4 +522,78 @@ void max_pooling_backward(tensor *dout, tensor *dinput, uint32_t *mask) {
   for (size_t i = 0; i < dout->len; i++) {
     dinput->grad[mask[i]] += dout->grad[i];
   }
+}
+
+void destroy_cnnet(cnnet *cnn){
+  
+  for (uint32_t l = 0; l < cnn->n_layers; l++) {
+    cnnet_layer *cnn_l=cnn->layers+l;
+    switch (cnn_l->l_type) {
+    case CONV_LAYER: {
+      conv_linear_l *conv=&cnn_l->tag.conv;
+      destroy_tensor(cnn_l->out);
+      destroy_matrix(conv->in_mat );
+      destroy_matrix(conv->W_mat  );
+      destroy_matrix(conv->mW_mat );
+      destroy_matrix(conv->vW_mat );
+      destroy_matrix(conv->bias   );
+      destroy_matrix(conv->mb_mat );
+      destroy_matrix(conv->vb_mat );
+      destroy_matrix(conv->dW_mat );
+      destroy_matrix(conv->d_bias );
+      destroy_matrix(conv->out_mat);
+      destroy_matrix(conv->dZ_mat );
+      destroy_matrix(conv->t_W_mat);
+      destroy_matrix(conv->t_in_mat);
+      cnn_l->out=NULL;
+    }break;
+    case ACTIV_CNN: {
+      destroy_tensor(cnn_l->out);
+    }break;
+    case POOLING_LAYER: {
+      poolling_l *pool=&cnn_l->tag.pool;
+      destroy_tensor(cnn_l->out);
+      cnn_l->out=NULL;
+      free(pool->mask);
+    }break;
+    case BATCH_NORM_CNN: {
+      b_norm_layer_cnn *bnorm = &cnn_l->tag.bnorm;
+      
+      destroy_matrix(bnorm->W_norm    );
+      destroy_matrix(bnorm->bias_norm );
+      destroy_matrix(bnorm->dW_norm   );
+      destroy_matrix(bnorm->dB_norm   );
+      destroy_matrix(bnorm->run_mean  );
+      destroy_matrix(bnorm->run_var   );
+      destroy_matrix(bnorm->mean_bf   );
+      destroy_matrix(bnorm->var_bf    );
+      destroy_matrix(bnorm->std_inv   );
+      destroy_matrix(bnorm->mW        );
+      destroy_matrix(bnorm->mB        );
+      destroy_matrix(bnorm->vW        );
+      destroy_matrix(bnorm->vB        );
+      destroy_matrix(bnorm->dx_hat    );
+      destroy_matrix(bnorm->x_hat     );
+      destroy_matrix(bnorm->sum_dx_hat);
+      destroy_matrix(bnorm->sum_dxx   );
+
+      destroy_matrix(bnorm->in_mat);
+      destroy_matrix(bnorm->out_mat);
+      
+      destroy_tensor(cnn_l->out);
+      cnn_l->out=NULL;
+    }break;
+    case MLP_LAYER: {
+      cnn_l->tag.mlp->layers->in->data=NULL;
+      cnn_l->tag.mlp->layers[0].grad_in->data=NULL;
+      cnn_l->tag.mlp->tp=NULL;
+      destroy_nnet(cnn_l->tag.mlp);
+    }    
+    }
+  }
+  
+  destroy_tensor(cnn->layers[0].in);
+  destroy_thread_pool(cnn->tp);
+  free(cnn->layers);
+  free(cnn);
 }

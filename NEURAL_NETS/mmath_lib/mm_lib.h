@@ -135,6 +135,12 @@ void ADAMW_correction(matrix *weights, matrix *mw, matrix *vw, matrix *wgrad,
                       float b1, float b2, float lr, uint64_t t, float lambda);
 void apply_dropout(matrix *out, matrix *mask, float p_alive);
 
+void layer_norm_forward(matrix *lin, matrix *gamma, matrix *beta,
+                        matrix *mean, matrix *var, matrix *std_inv,
+                        matrix *x_hat, float epsilon);
+void layer_norm_backward(matrix *dout, matrix *gamma,
+                         matrix *std_inv, matrix *dx_hat, matrix *dgamma, matrix *dbeta);
+
 float sigmoid(float z);
 float d_sigmoid(float z);
 float d_tanh(float z);
@@ -152,5 +158,6 @@ float get_accuracy(matrix *y, matrix *t);
 uint64_t xorshift64(XorShift64State *state);
 float xorshift_float(XorShift64State *state);
 void destroy_matrix(matrix *mat);
+void destroy_tensor(tensor *tsr);
 void sub_timespec(struct timespec t1, struct timespec t2, struct timespec *td);
 #endif

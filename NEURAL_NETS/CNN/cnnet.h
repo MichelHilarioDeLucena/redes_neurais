@@ -106,4 +106,6 @@ void col2im(tensor *input, matrix *buffer, int k_w, int k_h, int stride,int padd
 void max_pooling(tensor *in, tensor *out, uint32_t *mask, uint32_t kh,
                  uint32_t kw, uint32_t stride, uint32_t padd);
 void max_pooling_backward(tensor *dout, tensor *dinput, uint32_t *mask);
+
+void destroy_cnnet(cnnet *cnn);
 #endif
