@@ -10,15 +10,15 @@ int main() {
   const char *test_path_labels  = "archive_MNIST/t10k-labels.idx1-ubyte";
   const char *test_path_images  = "archive_MNIST/t10k-images.idx3-ubyte";
 
-  uint32_t batch = 72, t_step = 28, epochs = 1;
-  float lr = 0.05;
+  uint32_t batch = 72, t_step = 28, epochs = 5;
+  float lr = 0.003;
   srand(time(0));
 
   scheme_grnn scheme[] = {
     { .type=GRU,
       .input_size=28,
       .config.gru.hidden_size=64,
-      .config.gru.LN=true,
+      .config.gru.LN=false,
     },
     { .type=DENSE_GRNN,
       .config.dense.output_size=10,
@@ -30,6 +30,9 @@ int main() {
   params_grrn params={
     .batch    =batch,
     .lr       =lr,
+    .b1       =0.99f,
+    .b2       =0.999f,
+    .decay    =0.f,
     .mode     =MANY_TO_ONE,
     .n_layers =n_ly,
     .t_step   =t_step,

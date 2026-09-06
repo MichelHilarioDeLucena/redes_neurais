@@ -27,6 +27,9 @@ typedef struct scheme_grnn{
 typedef struct gate{
   float epsilon;
   matrix *Wh,*Wi, *b,*gamma;
+  matrix *mWh,*mWi, *mb,*mgamma;
+  matrix *vWh,*vWi, *vb,*vgamma;
+
   matrix *dWh,*dWi, *db,*dgamma;
   matrix *tWh,*tWi;
   matrix **out,**dout;
@@ -43,6 +46,8 @@ typedef struct gru_layer{
 
 typedef struct dense_layer{
   matrix *W, *b;
+  matrix *mW, *mb;
+  matrix *vW, *vb;
   matrix *dW, *db;
 } dense_layer;
 
@@ -66,13 +71,14 @@ typedef struct params_grrn{
   uint32_t n_layers;
   uint32_t t_step;
   grnn_mode mode;
-  float lr;
+  float lr,b1,b2,decay;
 }params_grrn;
 
 typedef struct grnnet {
   grnn_mode mode;
   uint32_t time_step, batch_size, n_layers;
-  float learn_rt;
+  uint64_t adam_step;
+  float learn_rt,b1,b2,decay;
   grnnet_layer *layers;
   thread_pool *tp;
 } grnnet;
@@ -81,6 +87,7 @@ grnnet *create_grnnet(scheme_grnn *scheme,params_grrn *params_grn);
 void forward_grnnet(grnnet *rnn);
 void backprop_grnnet(grnnet *rnn, matrix *label);
 void update_grnnet(grnnet *rnn);
+void update_grnnet(grnnet *grnn);
 
 void run_grnnet(size_t epoch_max, grnnet *rnn, data_loader *dtl,
                 STATE_RUN state, FILE *file);

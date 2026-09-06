@@ -14,8 +14,12 @@ grnnet *create_grnnet(scheme_grnn *scheme, params_grrn *grn_params) {
   grnn_mode mode = grn_params->mode;
   
   grnn->learn_rt = lr;
+  grnn->b1    = grn_params->b1;
+  grnn->b2    = grn_params->b2;
+  grnn->decay = grn_params->decay;
   grnn->n_layers = n_layers;
   grnn->time_step = t_step;
+  grnn->adam_step = 1;
   grnn->batch_size = batch;
   grnn->mode = mode;
   grnn->tp = new_thread_pool();
@@ -84,9 +88,13 @@ grnnet *create_grnnet(scheme_grnn *scheme, params_grrn *grn_params) {
         grn_l->grad_out[t] = new_matrix(batch, out_size);
 
       dense->W = new_matrix(in_size, out_size);
+      dense->mW = new_matrix(in_size, out_size);
+      dense->vW = new_matrix(in_size, out_size);
       init_uniform_distr(dense->W, in_size, out_size);
       dense->dW = new_matrix(in_size, out_size);
       dense->b = new_matrix(1, out_size);
+      dense->mb = new_matrix(1, out_size);
+      dense->vb = new_matrix(1, out_size);
       dense->db = new_matrix(1, out_size);
     } break;
     }
@@ -383,6 +391,50 @@ void update_grnnet(grnnet *grnn) {
     }
   }
 }
+void update_adamw_grnnet(grnnet *grnn) {
+  float b1=grnn->b1,b2=grnn->b2;
+  float lr=grnn->learn_rt;
+  float decay=grnn->decay;
+  uint64_t step=grnn->adam_step;
+  for (uint32_t l = 0; l < grnn->n_layers; l++) {
+    grnnet_layer *layer = grnn->layers + l;
+    switch (layer->t_layer) {
+    case GRU: {
+      struct gru_layer *gru = &layer->layer.gru;
+      if(gru->use_layer_norm){
+        ADAMW_correction(gru->z.gamma,gru->z.mgamma,gru->z.vgamma,gru->z.dgamma,b1,b2,lr,step,decay);        
+        ADAMW_correction(gru->r.gamma,gru->r.mgamma,gru->r.vgamma,gru->r.dgamma,b1,b2,lr,step,decay);
+        ADAMW_correction(gru->n.gamma,gru->n.mgamma,gru->n.vgamma,gru->n.dgamma,b1,b2,lr,step,decay);
+      }
+
+      ADAMW_correction(gru->z.Wh,gru->z.mWh,gru->z.vWh,gru->z.dWh,b1,b2,lr,step,decay);
+      ADAMW_correction(gru->r.Wh,gru->r.mWh,gru->r.vWh,gru->r.dWh,b1,b2,lr,step,decay);
+      ADAMW_correction(gru->n.Wh,gru->n.mWh,gru->n.vWh,gru->n.dWh,b1,b2,lr,step,decay);
+
+      ADAMW_correction(gru->z.Wi,gru->z.mWi,gru->z.vWi,gru->z.dWi,b1,b2,lr,step,decay);
+      ADAMW_correction(gru->r.Wi,gru->r.mWi,gru->r.vWi,gru->r.dWi,b1,b2,lr,step,decay);
+      ADAMW_correction(gru->n.Wi,gru->n.mWi,gru->n.vWi,gru->n.dWi,b1,b2,lr,step,decay);
+
+      ADAMW_correction(gru->z.b,gru->z.mb,gru->z.vb,gru->z.db,b1,b2,lr,step,decay);
+      ADAMW_correction(gru->r.b,gru->r.mb,gru->r.vb,gru->r.db,b1,b2,lr,step,decay);
+      ADAMW_correction(gru->n.b,gru->n.mb,gru->n.vb,gru->n.db,b1,b2,lr,step,decay);
+
+      transpose_by(gru->z.Wh, gru->z.tWh);
+      transpose_by(gru->z.Wi, gru->z.tWi);
+      transpose_by(gru->r.Wh, gru->r.tWh);
+      transpose_by(gru->r.Wi, gru->r.tWi);
+      transpose_by(gru->n.Wh, gru->n.tWh);
+      transpose_by(gru->n.Wi, gru->n.tWi);
+    } break;
+    case DENSE_GRNN: {
+      struct dense_layer *dense = &layer->layer.dense;
+      ADAMW_correction(dense->W,dense->mW,dense->vW,dense->dW,b1,b2,lr,step,decay);
+      ADAMW_correction(dense->b,dense->mb,dense->vb,dense->db,b1,b2,lr,step,decay);
+    } break;
+    }
+  }
+  grnn->adam_step++;
+}
 
 void run_grnnet(size_t epoch_max, grnnet *grnn, data_loader *dtl,
                 STATE_RUN state, FILE *fout) {
@@ -411,7 +463,8 @@ void run_grnnet(size_t epoch_max, grnnet *grnn, data_loader *dtl,
       forward_grnnet(grnn);
       if (state == TRAIN) {
         backprop_grnnet(grnn, target);
-        update_grnnet(grnn);
+        // update_grnnet(grnn);
+        update_adamw_grnnet(grnn);
       }
       loss += cat_cross_entropy(out, target);
       acc += get_accuracy(out, target) * 100.0;
@@ -420,8 +473,7 @@ void run_grnnet(size_t epoch_max, grnnet *grnn, data_loader *dtl,
     clock_gettime(CLOCK_MONOTONIC, &t1);
 
     sub_timespec(t0, t1, &delta);
-    printf("e = %ld | dt(s) = %d.%.4ld", e + 1, (int)delta.tv_sec,
-           delta.tv_nsec);
+    printf("e = %ld | dt(s) = %d.%.4ld", e + 1, (int)delta.tv_sec, delta.tv_nsec);
 
     loss *= ba_md;
     acc *= ba_md;
@@ -458,10 +510,16 @@ void out_grnnet(grnnet *grnn, data_loader *dtl, char *namef) {
 void init_gate(gate *g, uint32_t B, uint32_t H, uint32_t I,uint32_t T,bool use_ln){
   g->epsilon = 1e-5f;
   g->Wh = new_matrix(H, H);
+  g->mWh = new_matrix(H, H);
+  g->vWh = new_matrix(H, H);
   g->Wi = new_matrix(I, H);
+  g->mWi = new_matrix(I, H);
+  g->vWi = new_matrix(I, H);
   g->tWh = new_matrix(H, H);
   g->tWi = new_matrix(H, I);
   g->b  = new_matrix(1, H);  
+  g->mb  = new_matrix(1, H);  
+  g->vb  = new_matrix(1, H);  
   g->dWh = new_matrix(H, H);
   g->dWi = new_matrix(I, H);
   g->db  = new_matrix(1, H);  
@@ -474,6 +532,8 @@ void init_gate(gate *g, uint32_t B, uint32_t H, uint32_t I,uint32_t T,bool use_l
 
   if(use_ln){
     g->gamma = new_matrix(1, H);
+    g->mgamma = new_matrix(1, H);
+    g->vgamma = new_matrix(1, H);
     g->dgamma = new_matrix(1, H);
     g->mean   = calloc(T, sizeof(matrix*)),
     g->var    = calloc(T, sizeof(matrix*)),
@@ -484,9 +544,10 @@ void init_gate(gate *g, uint32_t B, uint32_t H, uint32_t I,uint32_t T,bool use_l
       g->var    [t] = new_matrix(B, 1),
       g->std_inv[t] = new_matrix(B, 1),
       g->x_hat  [t] = new_matrix(B, H);  
+    for (int i = 0; i < H; i++) g->gamma->data[i] = 1.0f;
   }
 
-  for (int i = 0; i < H; i++) g->gamma->data[i] = 1.0f;
+  
   
   init_uniform_distr(g->Wi, I, H);
   init_uniform_distr(g->Wh, H, H);
