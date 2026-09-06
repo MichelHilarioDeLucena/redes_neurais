@@ -10,7 +10,6 @@ Para todos os casos é usado MNIST.
 - GRNN(GRU-RNN) (Gated Recurrent Unit Neural Network)
 
 ## Em desenvolvimento
-- Batch-norm para todas as redes (exceto RNN)
 - Camadas Residuais para CNN
   
 ## Compilação e Execução
