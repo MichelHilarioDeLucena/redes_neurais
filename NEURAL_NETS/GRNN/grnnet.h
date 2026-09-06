@@ -13,36 +13,34 @@ typedef enum STATE_RUN {
 } STATE_RUN;
 
 typedef enum grnn_mode { MANY_TO_MANY=0b1, MANY_TO_ONE=0b10, GRAD_IN=0b100 } grnn_mode;
-typedef enum grnn_layer_t { GRU, BATCHNORM, DENSE } grnn_layer_t;
+typedef enum grnn_layer_t { GRU, DENSE_GRNN } grnn_layer_t;
 
 typedef struct scheme_grnn{
     grnn_layer_t type;
     uint32_t input_size;
     union {
-        struct { uint32_t hidden_size; } gru;
+        struct { uint32_t hidden_size;bool LN; } gru;
         struct { uint32_t output_size; } dense;
     } config;
 } scheme_grnn;
 
+typedef struct gate{
+  float epsilon;
+  matrix *Wh,*Wi, *b,*gamma;
+  matrix *dWh,*dWi, *db,*dgamma;
+  matrix *tWh,*tWi;
+  matrix **out,**dout;
+  matrix **mean, **var;
+  matrix **std_inv,**x_hat;
+}gate;
 
 typedef struct gru_layer{
-      matrix **h;
-      matrix **dh;
-      matrix **z, **r, **n;
-      matrix **dz, **dr, **dn;
+  bool use_layer_norm;
+  matrix **h;
+  matrix **dh;
+  gate z,r,n;
+} gru_layer;
 
-      matrix *W_iz, *W_ir, *W_in;
-      matrix *W_hz, *W_hr, *W_hn;
-
-      matrix *tW_iz, *tW_ir, *tW_in;
-      matrix *tW_hz, *tW_hr, *tW_hn;
-
-      matrix *b_z, *b_r, *b_n;
-
-      matrix *dW_iz, *dW_ir, *dW_in;
-      matrix *dW_hz, *dW_hr, *dW_hn;
-      matrix *db_z, *db_r, *db_n;
-    } gru_layer;
 typedef struct dense_layer{
   matrix *W, *b;
   matrix *dW, *db;
@@ -55,7 +53,7 @@ typedef struct grnnet_layer {
   matrix **out;
   matrix **grad_out;
 
-  matrix *y1, *y2, *y3, *y4, *t_wi,*t_i,*t_g,*t_wh;
+  matrix *y1, *y2, *y3, *y4,*t_i,*t_g;
 
   union grrn_layer_union{
     gru_layer gru;
@@ -87,6 +85,11 @@ void update_grnnet(grnnet *rnn);
 void run_grnnet(size_t epoch_max, grnnet *rnn, data_loader *dtl,
                 STATE_RUN state, FILE *file);
 void train_grnnet(size_t epoch_max, grnnet *net, data_loader *dtl, char *namef);
-void out_grnnet(grnnet *net, data_loader *dtl, char *namef);
+void out_grnnet(grnnet *grnet, data_loader *dtl, char *namef);
+void init_gate(gate *g, uint32_t B, uint32_t H, uint32_t I,uint32_t T,bool use_ln);
+void SGD_gate(gate *g,float lr,float maxg);
+void reset_gate(gate *gate);
+void destroy_gate(gate *gate,uint32_t T,bool use_ln);
 
+void destroy_grnnet(grnnet *grnn);
 #endif

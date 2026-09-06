@@ -10,7 +10,7 @@ int main() {
   const char *test_path_labels  = "archive_MNIST/t10k-labels.idx1-ubyte";
   const char *test_path_images  = "archive_MNIST/t10k-images.idx3-ubyte";
 
-  uint32_t batch = 72, t_step = 28, epochs = 5;
+  uint32_t batch = 72, t_step = 28, epochs = 1;
   float lr = 0.05;
   srand(time(0));
 
@@ -18,8 +18,9 @@ int main() {
     { .type=GRU,
       .input_size=28,
       .config.gru.hidden_size=64,
+      .config.gru.LN=true,
     },
-    { .type=DENSE,
+    { .type=DENSE_GRNN,
       .config.dense.output_size=10,
     }
   };
@@ -46,5 +47,6 @@ int main() {
   out_grnnet(grnn, test_ld, "grnn_test.csv");
 
   destroy_loader(test_ld);
+  destroy_grnnet(grnn);
   return 0;
 }

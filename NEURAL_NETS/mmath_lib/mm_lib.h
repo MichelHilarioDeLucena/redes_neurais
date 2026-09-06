@@ -21,9 +21,9 @@
       pb = b->data;                                                            \
       float *end_pa = pa + a->col;                                             \
       for (float *pa_elem = pa, *pc_elem; pa_elem < end_pa; pa_elem++) {       \
-        float *end_pc = pc + c->col,a_value=*pa_elem;                                           \
+        float *end_pc = pc + c->col,a_value=*pa_elem;                          \
         for (pc_elem = pc; pc_elem < end_pc; pc_elem++, pb++)                  \
-          *pc_elem += a_value * *pb;                                          \
+          *pc_elem += a_value * *pb;                                           \
       }                                                                        \
     }                                                                          \
   } break;                                                                     \
@@ -70,14 +70,18 @@
 
 enum { NS_PER_SECOND = 1000000000 };
 
-typedef enum AFUNC_TYPE { L_RELU, RELU, SIGMOID, TANH, SILU } AFUNC_TYPE;
+typedef enum activ_func { 
+  L_RELU, RELU, SIGMOID, TANH, SILU,LOG_SOFTMAX, LINEAR
+} activ_func;
 
-typedef enum TYPE_MATMULT {
-  NN,
-  TN,
-  NT,
-  TT,
-} TYPE_MATMULT;
+typedef enum type_matmult {
+  NN,TN,NT,TT,
+} type_matmult;
+
+typedef enum {
+    TENSOR_DATA,
+    TENSOR_GRAD
+} tensor_data_t;
 
 typedef struct tensor {
   float *data, *data_end;
@@ -96,12 +100,13 @@ typedef struct {
 } XorShift64State;
 
 matrix *new_matrix(uint32_t r, uint32_t c);
+matrix *new_matrix_set_data(uint32_t r, uint32_t c,float *data);
 
 tensor *new_tensor( uint32_t N, uint32_t H, uint32_t W, uint32_t C);
 tensor *new_tensor_grad_init( uint32_t N, uint32_t H, uint32_t W, uint32_t C);
 
 void matrix_mult(matrix *restrict a, matrix *restrict b, matrix *restrict c,
-                 TYPE_MATMULT type, bool reset);
+                 type_matmult type, bool reset);
 
 void transpose_by(matrix *a, matrix *t);
 void matrix_sum(matrix *a, matrix *b, matrix *c);
@@ -111,11 +116,14 @@ void matrix_hadd_dot(matrix *a, matrix *b, matrix *c);
 void matrix_hadd_dot_scalar(matrix *a, matrix *b, matrix *c, float k);
 
 void matrix_scalar_sum(matrix *a, float k);
-void matrix_sum_broadcast(matrix *o, matrix *b);
+void matrix_sum_by_row(matrix *o, matrix *b);
+void matrix_sum_by_col(matrix *o, matrix *b);
 void matrix_scalar_sub(matrix *a, float k);
 void matrix_scalar_k_sub_b(matrix *a, float k,matrix *b);
 void matrix_hadd_scalar_k_sub_b(matrix *a,matrix *b,matrix *c,float k);
 void matrix_scalar_prod(matrix *a, float k);
+void matrix_to_tensor_NHWC(matrix *out_mat, tensor *output,tensor_data_t use_data);
+void tensor_to_matrix_NHWC(matrix *out_mat, tensor *output,tensor_data_t use_data);
 void SGD(matrix *theta, matrix *d_theta,float lr,float max_norm);
 
 void init_uniform_distr(matrix *m, uint32_t i, uint32_t o);
@@ -126,6 +134,12 @@ void log_softmax(matrix *mat);
 void ADAMW_correction(matrix *weights, matrix *mw, matrix *vw, matrix *wgrad,
                       float b1, float b2, float lr, uint64_t t, float lambda);
 void apply_dropout(matrix *out, matrix *mask, float p_alive);
+
+void layer_norm_forward(matrix *lin, matrix *gamma, matrix *beta,
+                        matrix *mean, matrix *var, matrix *std_inv,
+                        matrix *x_hat, float epsilon);
+void layer_norm_backward(matrix *dout, matrix *gamma,
+                         matrix *std_inv, matrix *dx_hat, matrix *dgamma, matrix *dbeta);
 
 float sigmoid(float z);
 float d_sigmoid(float z);
@@ -144,5 +158,6 @@ float get_accuracy(matrix *y, matrix *t);
 uint64_t xorshift64(XorShift64State *state);
 float xorshift_float(XorShift64State *state);
 void destroy_matrix(matrix *mat);
+void destroy_tensor(tensor *tsr);
 void sub_timespec(struct timespec t1, struct timespec t2, struct timespec *td);
 #endif

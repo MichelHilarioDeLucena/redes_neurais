@@ -12,28 +12,27 @@ typedef struct param {
   union state {
     struct {
       matrix *a, *b, *c;
-      TYPE_MATMULT type;
+      type_matmult type;
       bool reset;
     } matmult;
     struct {
       matrix *a, *b, *c, *d;
       unsigned int rseed;
-      AFUNC_TYPE f_type;
+      activ_func f_type;
       float p_alive;
-      int is_train;
+      int is_dropout;
     } f_fusion;
     struct {
-      matrix *a, *b, *c;
+      matrix *a, *b, *c,*d;
       float p_alive;
-      AFUNC_TYPE df_type;
+      int is_dropout;
+      activ_func df_type;
     } b_fusion;
   } state;
 
   struct thread_pool *pool;
   uint32_t id, start_row, end_row;
   WORK_STATE w_state;
-
-  int is_train;
 } param;
 
 typedef struct thread_pool {
@@ -50,12 +49,12 @@ typedef struct thread_pool {
 
 thread_pool *new_thread_pool();
 void *kernel_operation(void *arg);
-void threaded_matmult(matrix *a, matrix *b, matrix *c,TYPE_MATMULT type,bool reset, thread_pool *tp);
+void threaded_matmult(matrix *a, matrix *b, matrix *c,type_matmult type,bool reset, thread_pool *tp);
 void threaded_forward(matrix *bias, matrix *mask, matrix *out, matrix *z_out,
-                      float p_val, int is_train, AFUNC_TYPE actv_type,
+                      float p_val, int is_train, activ_func actv_type,
                       thread_pool *tp);
-void threaded_backward(matrix *out, matrix *mask, matrix *delta, float p_val,
-                      AFUNC_TYPE actv_type, thread_pool *tp);
+void threaded_backward(matrix *z, matrix *gin, matrix *gout,matrix *mask, float p_val,int is_train,
+                      activ_func dactv_type, thread_pool *tp);
 void destroy_thread_pool(thread_pool *tp);
 
 

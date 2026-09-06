@@ -17,6 +17,17 @@ matrix *new_matrix(uint32_t row, uint32_t col) {
   return new_m;
 }
 
+matrix *new_matrix_set_data(uint32_t r, uint32_t c, float *data){
+  matrix *new_m = malloc(sizeof(matrix));
+  if(!new_m){
+    perror("ERRO:falha em alocar mem.");
+    exit(1);
+  }
+  *new_m = (matrix){r, c, r * c, data};
+  new_m->end = new_m->data + new_m->len;
+  return new_m;
+}
+
 tensor *new_tensor( uint32_t N, uint32_t H, uint32_t W, uint32_t C) {
   
   tensor *_tensor = calloc(1,sizeof(tensor));
@@ -38,7 +49,7 @@ tensor *new_tensor_grad_init( uint32_t N, uint32_t H, uint32_t W, uint32_t C) {
 }
 
 void matrix_mult(matrix *restrict a, matrix *restrict b, matrix *restrict c,
-                 TYPE_MATMULT type, bool reset) {
+                 type_matmult type, bool reset) {
   if (reset)
     memset(c->data, 0, c->len * sizeof(float));
   KERNEL_MATRIX_MULT(a, b, c, 0, c->row, type);
@@ -57,16 +68,6 @@ void matrix_sum(matrix *a, matrix *b, matrix *c) {
   float *end = pc + c->len;
   while (pc < end)
     *pc++ = *pa++ + *pb++;
-}
-
-void matrix_sum_broadcast(matrix *o, matrix *b) {
-  float *po = o->data;
-  for (uint32_t r = 0; r < o->row; r++) {
-    float *pb = b->data;
-    float *end_row = po + o->col;
-    while (po < end_row)
-      *po++ += *pb++;
-  }
 }
 
 void matrix_sub(matrix *a, matrix *b, matrix *c) {
@@ -103,6 +104,24 @@ void matrix_scalar_sum(matrix *a, float k) {
     *pa = *pa + k;
 }
 
+void matrix_sum_by_row(matrix *o, matrix *b) {
+  float *po = o->data;
+  float *pb = b->data;
+  for (uint32_t r = 0; r < o->row; r++,pb++) {
+    float *end_row = po + o->col;
+    for (;po < end_row;po++) *po += *pb;
+  }
+}
+
+void matrix_sum_by_col(matrix *o, matrix *b) {
+  float *po = o->data;
+  for (uint32_t r = 0; r < o->row; r++) {
+    float *pb = b->data;
+    float *end_row = po + o->col;
+    for (;po < end_row;po++,pb++) *po += *pb;
+  }
+}
+
 void matrix_scalar_sub(matrix *a, float k) {
   float *pa = a->data;
   float *end = a->end;
@@ -129,6 +148,36 @@ void matrix_scalar_prod(matrix *a, float k) {
   float *end = pa + a->len;
   for (; pa < end; pa++)
     *pa = *pa * k;
+}
+
+void matrix_to_tensor_NHWC(matrix *out_mat, tensor *output,tensor_data_t use_data){
+  uint32_t N = output->N, H = output->H, W = output->W, C = output->C;
+  float *op = out_mat->data;
+  float *tp = (use_data == TENSOR_DATA) ? output->data : output->grad;
+
+  for (uint32_t n = 0; n < N; n++)
+    for (uint32_t h = 0; h < H; h++)
+      for (uint32_t w = 0; w < W; w++)
+        for (uint32_t c = 0; c < C; c++) {
+          uint32_t idx = c * (N * H * W) + (n * H + h) * W + w;
+          uint32_t tidx = ((n * H + h) * W + w) * C + c;
+          tp[tidx] = op[idx];
+        }
+}
+
+void tensor_to_matrix_NHWC(matrix *out_mat, tensor *output,tensor_data_t use_data){
+  uint32_t N = output->N, H = output->H, W = output->W, C = output->C;
+  float *op = out_mat->data;
+  float *tp = (use_data == TENSOR_DATA) ? output->data : output->grad;
+
+  for (uint32_t n = 0; n < N; n++)
+    for (uint32_t h = 0; h < H; h++)
+      for (uint32_t w = 0; w < W; w++)
+        for (uint32_t c = 0; c < C; c++) {
+          uint32_t idx = c * (N * H * W) + (n * H + h) * W + w;
+          uint32_t tidx = ((n * H + h) * W + w) * C + c;
+          op[idx] = tp[tidx];
+        }
 }
 
 void SGD(matrix *theta, matrix *d_theta,float lr,float max_norm){
@@ -254,6 +303,67 @@ void apply_dropout(matrix *out, matrix *mask, float p_alive) {
   }
 }
 
+void layer_norm_forward(matrix *lin, matrix *gamma, matrix *beta, matrix *mean,
+                        matrix *var, matrix *std_inv, matrix *x_hat,
+                        float epsilon){
+  uint32_t M=lin->row,N=lin->col;
+  uint32_t len=M*N;
+  memset(mean->data, 0, M * sizeof(float));
+  memset(var->data,  0, M * sizeof(float));
+  float over_N=1.f/N;
+  for(uint32_t i=0,I=0;i<len;i+=N,I++)
+    for(uint32_t j=0;j<N;j++)
+      mean->data[I]+=lin->data[i+j];
+  for(uint32_t i=0;i<M;i++)
+    mean->data[i]*=over_N;
+
+  for(uint32_t i=0,I=0;i<len;i+=N,I++)
+    for(uint32_t j=0;j<N;j++){
+      float diff=lin->data[i+j]-mean->data[I];
+      var->data[I]+=diff*diff;
+    }
+  for(uint32_t i=0;i<M;i++)
+    var->data[i]*=over_N;
+  for(uint32_t i=0;i<M;i++)
+    std_inv->data[i]=1.f/(sqrtf(var->data[i]+epsilon));
+  for(uint32_t i=0,I=0;i<len;i+=N,I++)
+    for(uint32_t j=0;j<N;j++){
+      x_hat->data[i+j]=(lin->data[i+j]-mean->data[I])*std_inv->data[I];
+    }
+  for(uint32_t i=0,I=0;i<len;i+=N,I++)
+    for(uint32_t j=0;j<N;j++){
+      lin->data[i+j]=x_hat->data[i+j]*gamma->data[j]+beta->data[j];
+    }
+}
+
+void layer_norm_backward(matrix *dout, matrix *gamma,
+                        matrix *std_inv, matrix *x_hat,
+                        matrix *dgamma, matrix *dbeta) {
+  uint32_t M = dout->row, N = dout->col;
+  uint32_t len = M * N;
+
+  for (uint32_t i = 0; i < len; i += N)
+    for (uint32_t j = 0; j < N; j++)
+      dgamma->data[j] += dout->data[i + j] * x_hat->data[i + j],
+      dbeta->data[j] += dout->data[i + j];
+  float over_N=1.f/N;
+  for (uint32_t i = 0; i < M; i++) {
+    float sum_dx_hat = 0.0f;
+    float sum_dxx = 0.0f;
+    for (uint32_t j = 0; j < N; j++) {
+        float dh = dout->data[i*N + j] * gamma->data[j];
+        sum_dx_hat += dh;
+        sum_dxx += dh * x_hat->data[i*N + j];
+    }
+    
+    float inv_std = std_inv->data[i];
+    for (uint32_t j = 0; j < N; j++) {
+        float dh = dout->data[i*N + j] * gamma->data[j];
+        dout->data[i*N + j] = inv_std * (dh - (sum_dx_hat + x_hat->data[i*N + j] * sum_dxx) * over_N);
+    }
+  }
+}
+
 void log_softmax(matrix *mat) {
   for (size_t r = 0; r < mat->row; r++) {
     float *row_data = mat->data + r * mat->col;
@@ -315,8 +425,25 @@ float xorshift_float(XorShift64State *state) {
 }
 
 void destroy_matrix(matrix *mat) {
-  free(mat->data);
-  free(mat);
+  if(mat){
+    if(mat->data)
+      free(mat->data);
+    mat->data=NULL;
+    free(mat);
+    mat=NULL;
+  }
+}
+
+void destroy_tensor(tensor *tsr){
+  if(tsr){
+
+    free(tsr->data);
+    tsr->data=NULL;
+    if(tsr->grad)
+      free(tsr->grad);
+    tsr->grad=NULL;
+    free(tsr);
+  }
 }
 
 void sub_timespec(struct timespec t1, struct timespec t2, struct timespec *td) {

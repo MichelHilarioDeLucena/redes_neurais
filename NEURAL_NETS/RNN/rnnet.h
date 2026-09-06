@@ -15,7 +15,7 @@ typedef enum STATE_RUN {
 
 typedef struct scheme_rnn{
     uint32_t input_size,hidden_size,out_size;
-    AFUNC_TYPE activ;
+    activ_func activ;
 }scheme_rnn;
 
 typedef struct rnnet_layer{
@@ -39,7 +39,7 @@ typedef struct rnnet_layer{
     matrix *db_o;
 
     matrix **dh;
-    AFUNC_TYPE activ;
+    activ_func activ;
 }rnnet_layer;
 
 typedef struct rnnet{
@@ -57,5 +57,5 @@ void run_nnet(size_t epoch_max, rnnet *rnn, data_loader *dtl, STATE_RUN state,
               FILE *file);
 void train_nnet(size_t epoch_max, rnnet *net, data_loader *dtl, char *namef);
 void out_nnet(rnnet *net, data_loader *dtl, char *namef);
-
+void destroy_rnn(rnnet *rnn);
 #endif
