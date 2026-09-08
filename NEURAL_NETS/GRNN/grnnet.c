@@ -556,6 +556,8 @@ void init_gate(gate *g, uint32_t B, uint32_t H, uint32_t I,uint32_t T,bool use_l
 }
 
 void SGD_gate(gate *g,float lr,float maxg){
+  if(g->gamma)
+    SGD(g->gamma, g->gamma, lr, maxg);
   SGD(g->Wi, g->dWi, lr, maxg);
   SGD(g->Wh, g->dWh, lr, maxg);
   SGD(g->b, g->db , lr, maxg);
