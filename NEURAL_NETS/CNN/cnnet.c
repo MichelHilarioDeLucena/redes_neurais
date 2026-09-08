@@ -363,8 +363,22 @@ void update_cnnet(cnnet *cnn) {
                        cnn->t_step, 0);
       ADAMW_correction(bias, mb, vb, d_bias, cnn->b1, cnn->b2, cnn->learn_rt,
                        cnn->t_step, 0);
-      break;
-    }
+    }break;
+    case BATCH_NORM_CNN:{
+      matrix *W  = cnn_l->tag.bnorm.W_norm;
+      matrix *mW = cnn_l->tag.bnorm.mW;
+      matrix *vW = cnn_l->tag.bnorm.vW;
+      matrix *dW = cnn_l->tag.bnorm.dW_norm;
+
+      matrix *bias = cnn_l->tag.bnorm.bias_norm;
+      matrix *mb   = cnn_l->tag.bnorm.mB;
+      matrix *vb   = cnn_l->tag.bnorm.vB;
+      matrix *d_bias = cnn_l->tag.conv.d_bias;
+      ADAMW_correction(W, mW, vW, dW, cnn->b1, cnn->b2, cnn->learn_rt,
+                       cnn->t_step, 0);
+      ADAMW_correction(bias, mb, vb, d_bias, cnn->b1, cnn->b2, cnn->learn_rt,
+                       cnn->t_step, 0);
+    }break;
     case MLP_LAYER: update_layers_adamw(cnn_l->tag.mlp);
     break;
     }
